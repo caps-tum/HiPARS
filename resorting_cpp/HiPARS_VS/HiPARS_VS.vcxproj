@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -170,15 +170,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\bind.cpp" />
+    <ClCompile Include="..\src\fixLatticeByRow.cpp" />
     <ClCompile Include="..\src\sortLatticeByRow.cpp" />
-    <ClCompile Include="..\src\sortLatticeGeometries.cpp" />
+    <ClCompile Include="..\src\sortLatticeGreedy.cpp" />
     <ClCompile Include="..\src\sortParallel.cpp" />
     <ClCompile Include="..\src\sortSequentiallyByRow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\config.hpp" />
     <ClInclude Include="..\include\sort.hpp" />
-    <ClInclude Include="..\include\sortLatticeGeometries.hpp" />
     <ClInclude Include="..\include\sortParallel.hpp" />
     <ClInclude Include="..\include\sortSequentiallyByRow.hpp" />
   </ItemGroup>

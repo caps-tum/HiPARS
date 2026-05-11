@@ -210,7 +210,7 @@ class Config
         }
         bool readConfig(std::string filePath)
         {
-            std::ifstream configFile(filePath, std::ios_base::openmode::_S_in);
+            std::ifstream configFile(filePath, std::ios_base::in);
             std::string line;
             
             if(!configFile.is_open())
