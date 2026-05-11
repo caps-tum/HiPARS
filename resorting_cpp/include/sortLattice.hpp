@@ -24,7 +24,7 @@ struct ArrayInformation
 
     // Across channel dir will be abbreviated as XC, along channel as AC
     unsigned int arraySizeXC, arraySizeAC, maxTonesXC, maxTonesAC, dumpingIndicesLow, dumpingIndicesHigh, 
-        firstNormalIndexXC, lastNormalIndexXCExcl, firstNormalIndexAC, lastNormalIndexACExcl, firstRelevantAC, lastRelevantACExcl;
+        firstNormalIndexXC, lastNormalIndexXCExcl, firstNormalIndexAC, lastNormalIndexACExcl, firstRelevantXC, lastRelevantXCExcl, firstRelevantAC, lastRelevantACExcl;
     double spacingXC, spacingAC;
     int targetGapXC, targetGapAC, sortingChannelWidth;
 };
