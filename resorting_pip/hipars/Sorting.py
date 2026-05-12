@@ -105,25 +105,25 @@ class Sorting:
             target_geometry = np.ones((comp_zone_row_range[1] - comp_zone_row_range[0], comp_zone_col_range[1] - comp_zone_col_range[0]), dtype=bool)
         return resorting_cpp.sortLatticeGreedyParallel(state_array, *comp_zone_row_range, *comp_zone_col_range, target_geometry)
     
-    def sort_parallel_lattice_by_row(self, state_array : np.ndarray, target_geometry : np.ndarray[resorting_cpp.TargetState.Irrelevant]):
+    def sort_parallel_lattice_by_row(self, state_array : np.ndarray, target_geometry : np.ndarray[resorting_cpp.TargetState]):
         """Function for sorting lattice geometries row by row
         
         :param state_array: The array of boolean values to be sorted
         :type state_array: np.ndarray[bool]
         :param target_geometry: The array of target state values specifying the target geometry
-        :type target_geometry: np.ndarray[resorting_cpp.TargetState.Irrelevant]
+        :type target_geometry: np.ndarray[resorting_cpp.TargetState]
         :return: A list of moves to sort array or None if sorting has failed. A ParallelMove contains .steps, which is a list of ParallelMoveStep objects, each containing .colSelection and .rowSelection, which are lists of doubles
         :rtype: list[ParallelMove], optional
         """
         return resorting_cpp.sortLatticeByRowParallel(state_array, target_geometry)
     
-    def fix_lattice_by_row_sorting_deficiencies(self, state_array : np.ndarray, target_geometry : np.ndarray[resorting_cpp.TargetState.Irrelevant]):
+    def fix_lattice_by_row_sorting_deficiencies(self, state_array : np.ndarray, target_geometry : np.ndarray[resorting_cpp.TargetState]):
         """Function for fixing sorting deficiencies arising during sort_parallel_lattice_by_row
         
         :param state_array: The array of boolean values to be sorted
         :type state_array: np.ndarray[bool]
         :param target_geometry: The array of target state values specifying the target geometry
-        :type target_geometry: np.ndarray[resorting_cpp.TargetState.Irrelevant]
+        :type target_geometry: np.ndarray[resorting_cpp.TargetState]
         :return: A list of moves to sort array or None if sorting has failed. A ParallelMove contains .steps, which is a list of ParallelMoveStep objects, each containing .colSelection and .rowSelection, which are lists of doubles
         :rtype: list[ParallelMove], optional
         """

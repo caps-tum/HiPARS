@@ -24,7 +24,7 @@ class Config
         Config() : sequentialLogger(nullptr), parallelLogger(nullptr), greedyLatticeLogger(nullptr), latticeByRowLogger(nullptr), 
             logFileName("sorting.log"), sequentialLoggerName("sequentialSortingLogger"), parallelLoggerName("parallelSortingLogger"),
             greedyLatticeLoggerName("greedyLatticeSortingLogger"), latticeByRowLoggerName("latticeByRowSortingLogger"), logLevel("info"),
-            rowSpacing(1), columnSpacing(1), minAodSpacing(0), allowMovingEmptyTrapOntoOccupied(true), allowDiagonalMovement(true), 
+            rowSpacing(1), columnSpacing(1), minAodSpacing(0.001), allowMovingEmptyTrapOntoOccupied(true), allowDiagonalMovement(true), 
             allowMovesBetweenRows(true), allowMovesBetweenCols(true), allowMultipleMovesPerAtom(false), alwaysGenerateAllAODTones(false), 
             verticalSortingChannel(std::nullopt), aodTotalLimit(256), aodRowLimit(16), aodColLimit(16), moveCostOffset(150), 
             moveCostOffsetSubmove(0), moveCostScalingSqrt(0), moveCostScalingLinear(0.1),

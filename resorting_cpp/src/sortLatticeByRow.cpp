@@ -330,7 +330,7 @@ void clearChannel(ArrayAccessor& stateArray, int startIndex, int endIndexExcl, b
                     move.steps.push_back(std::move(start));
                 }
                 move.steps.push_back(std::move(end));
-                move.execute(stateArray, logger);
+                move.execute(stateArray, logger, std::nullopt, Config::getInstance().minAodSpacing);
                 moveList.push_back(move);
             }
         }
@@ -368,7 +368,8 @@ bool clearBufferAndDumpingIndicesXC(ArrayAccessor& stateArray, std::vector<Paral
             startSelectionXC.size() < arrayInfo.maxTonesXC;)
         {
             bufferIndexStream << *bufferIndexIter << ", ";
-            if(startSelectionXC.empty() || *bufferIndexIter - startSelectionXC.back() > Config::getInstance().minAodSpacing)
+            if(startSelectionXC.empty() || 
+                (*bufferIndexIter - startSelectionXC.back()) * arrayInfo.spacingXC > Config::getInstance().minAodSpacing)
             {
                 startSelectionXC.push_back(*bufferIndexIter);
                 endSelectionXC.push_back(*bufferIndexIter);
@@ -508,7 +509,7 @@ bool clearBufferAndDumpingIndicesXC(ArrayAccessor& stateArray, std::vector<Paral
             {
                 move.steps.push_back(std::move(start));
                 move.steps.push_back(std::move(end));
-                move.execute(stateArray, logger);
+                move.execute(stateArray, logger, std::nullopt, Config::getInstance().minAodSpacing);
                 moveList.push_back(move);
             }
         }
@@ -673,7 +674,7 @@ bool createSingleIndexMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>
                 }
 
                 move.steps.push_back(std::move(end));
-                move.execute(stateArray, logger);
+                move.execute(stateArray, logger, std::nullopt, Config::getInstance().minAodSpacing);
                 moveList.push_back(std::move(move));
 
                 if(dumpingMove)
@@ -1008,7 +1009,7 @@ bool createCombinedMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>& m
                     }
 
                     move.steps.push_back(std::move(end));
-                    move.execute(stateArray, logger);
+                    move.execute(stateArray, logger, std::nullopt, Config::getInstance().minAodSpacing);
                     moveList.push_back(std::move(move));
                 }
             }
@@ -1908,7 +1909,7 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
                         move.steps.push_back(std::move(elbow1));
                         move.steps.push_back(std::move(elbow2));
                         move.steps.push_back(std::move(end));
-                        move.execute(stateArray, logger);
+                        move.execute(stateArray, logger, std::nullopt, Config::getInstance().minAodSpacing);
                         moveList.push_back(std::move(move));
                     }
                 }

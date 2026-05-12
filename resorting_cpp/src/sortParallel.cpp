@@ -604,7 +604,7 @@ double ParallelMove::cost() const
 }
 
 bool ParallelMove::execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved) const
+    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, double minDist) const
 {
     const auto& firstStep = this->steps.front();
     const auto& lastStep = this->steps.back();
@@ -652,9 +652,9 @@ bool ParallelMove::execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::lo
         double lastTone = step.rowSelection[0];
         for(size_t i = 1; i < step.rowSelection.size(); i++)
         {
-            if(step.rowSelection[i] <= lastTone + DOUBLE_EQUIVALENCE_THRESHOLD)
+            if(step.rowSelection[i] < lastTone + minDist)
             {
-                logger->error("Move tones not in correct order! {} <= {}", step.rowSelection[i], lastTone);
+                logger->error("Move tones not in correct order! {} < {}", step.rowSelection[i], lastTone + minDist);
                 return false;
             }
             lastTone = step.rowSelection[i];
@@ -662,9 +662,9 @@ bool ParallelMove::execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::lo
         lastTone = step.colSelection[0];
         for(size_t i = 1; i < step.colSelection.size(); i++)
         {
-            if(step.colSelection[i] <= lastTone + DOUBLE_EQUIVALENCE_THRESHOLD)
+            if(step.colSelection[i] < lastTone + minDist)
             {
-                logger->error("Move tones not in correct order! {} <= {}", step.colSelection[i], lastTone);
+                logger->error("Move tones not in correct order! {} < {}", step.colSelection[i], lastTone + minDist);
                 return false;
             }
             lastTone = step.colSelection[i];

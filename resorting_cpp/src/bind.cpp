@@ -93,6 +93,9 @@ PYBIND11_MODULE(resorting_cpp, m) {
     .def_readwrite("columnSpacing", &Config::columnSpacing, R"pbdoc(
     :double: Physical spacing between columns. Only relevant for lattice algorithms
 )pbdoc")
+    .def_readwrite("minAodSpacing", &Config::minAodSpacing, R"pbdoc(
+    :double: Minimal physical spacing between generated tones. Only relevant for sortLatticeByRowParallel
+)pbdoc")
     .def_readwrite("allowMovingEmptyTrapOntoOccupied", &Config::allowMovingEmptyTrapOntoOccupied, R"pbdoc(
     :bool: Whether it is allowed to move empty traps onto occupied ones. Only relevant for sortParallel
 )pbdoc")
@@ -107,6 +110,14 @@ PYBIND11_MODULE(resorting_cpp, m) {
 )pbdoc")
     .def_readwrite("allowMultipleMovesPerAtom", &Config::allowMultipleMovesPerAtom, R"pbdoc(
     :bool: Whether an atom may be moved multiple times. Only relevant for sortParallel and sortLatticeGreedyParallel
+)pbdoc")
+    .def_readwrite("alwaysGenerateAllAODTones", &Config::alwaysGenerateAllAODTones, R"pbdoc(
+    :bool: Whether all allowed tones should always be generated. If true, moves are extended to always use all tones. 
+    Only works if aodTotalLimit >= aodRowLimit * aodColLimit. 
+    May add negative tones or ones greater than the array size for sortParallel. Only relevant for sortParallel and sortLatticeByRowParallel
+)pbdoc")
+    .def_readwrite("verticalSortingChannel", &Config::verticalSortingChannel, R"pbdoc(
+    :optional[bool]: Whether the sorting channel should be vertical. If not set, it will be determined automatically. Only relevant for sortLatticeByRowParallel
 )pbdoc")
     .def_readwrite("aodTotalLimit", &Config::aodTotalLimit, R"pbdoc(
     :unsigned int: How many movable traps may be generated in total. Only relevant for sortParallel, sortLatticeGreedyParallel, and sortLatticeByRowParallel

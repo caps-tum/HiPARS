@@ -30,7 +30,8 @@ public:
         ArrayAccessor& stateArray, ParallelMove::Step start, ParallelMove::Step end, std::shared_ptr<spdlog::logger> logger);
     double cost() const;
     bool execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::logger> logger,
-        std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved = std::nullopt) const;
+        std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved = std::nullopt, 
+        double minDist = DOUBLE_EQUIVALENCE_THRESHOLD) const;
     bool extendToUseAllTones(unsigned int stateArrayRows, unsigned int stateArrayCols, std::shared_ptr<spdlog::logger> logger, bool considerSpacing,
         std::optional<std::vector<int>> bufferRows = std::nullopt, std::optional<std::vector<int>> bufferCols = std::nullopt);
 };
