@@ -12,7 +12,7 @@
 
 #include "config.hpp"
 
-bool removeAtom(ArrayAccessor& stateArray, size_t row, size_t col, std::vector<ParallelMove>& moveList, 
+bool removeAtom(ArrayAccessor& stateArray, size_t row, size_t col, std::vector<ParallelMove>& moveList, MinimalArrayInformation& arrayInfo,
     Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> pathway, size_t borderRows, size_t borderCols,
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> distancePathway, std::shared_ptr<spdlog::logger> logger)
 {
@@ -27,35 +27,10 @@ bool removeAtom(ArrayAccessor& stateArray, size_t row, size_t col, std::vector<P
     int minRowDist = ceil(Config::getInstance().minDistFromOccSites / Config::getInstance().rowSpacing);
     int minColDist = ceil(Config::getInstance().minDistFromOccSites / Config::getInstance().columnSpacing);
 
-    if(row == 0 || row == stateArray.rows() - 1 || col == 0 || col == stateArray.cols() - 1)
+    std::set<int> dumpingIndicesACSet(arrayInfo.dumpingIndicesAC.begin(), arrayInfo.dumpingIndicesAC.end());
+
+    if((arrayInfo.vertical && dumpingIndicesACSet.contains(row)) || (!arrayInfo.vertical && dumpingIndicesACSet.contains(col)))
     {
-        ParallelMove move;
-        ParallelMove::Step start, end;
-        start.rowSelection.push_back(row);
-        start.colSelection.push_back(col);
-        end.rowSelection.push_back(row);
-        end.colSelection.push_back(col);
-        if(row == 0)
-        {
-            end.rowSelection[0] -= minRowDist;
-        }
-        else if(row == stateArray.rows() - 1)
-        {
-            end.rowSelection[0] += minRowDist;
-        }
-        else if(col == 0)
-        {
-            end.colSelection[0] -= minColDist;
-        }
-        else
-        {
-            end.colSelection[0] += minColDist;
-        }
-        move.steps.push_back(std::move(start));
-        move.steps.push_back(std::move(end));
-        move.execute(stateArray, logger);
-        moveList.push_back(std::move(move));
-        (pathway < 0).select(0, pathway);
         return true;
     }
 
@@ -67,17 +42,17 @@ bool removeAtom(ArrayAccessor& stateArray, size_t row, size_t col, std::vector<P
             {
                 int newRow = startRow + ((dir % 2 == 0) ? dir - 1 : 0);
                 int newCol = startCol + ((dir % 2 == 1) ? dir - 2 : 0);
-                if(newRow >= 0 && newRow < pathway.rows() && newCol >= 0 && newCol < pathway.cols() &&
+                bool isAtomSite = newRow > (int)borderRows && newRow < (int)(pathway.rows() - borderRows) && 
+                    newCol > (int)borderCols && newCol < (int)(pathway.cols() - borderCols) && 
+                    (newRow - borderRows) % 2 == 0 && (newCol - borderCols) % 2 == 0;
+                if(newRow >= borderRows && newRow < pathway.rows() - borderRows && newCol >= borderCols && newCol < pathway.cols() - borderCols &&
                     pathway(newRow, newCol) <= 0 && dist < distancePathway(newRow, newCol) && 
-                    !(newRow > (int)borderRows && newRow < (int)(pathway.rows() - borderRows) && 
-                        newCol > (int)borderCols && newCol < (int)(pathway.cols() - borderCols) && 
-                        (newRow - borderRows) % 2 == 0 && (newCol - borderCols) % 2 == 0 && 
-                        stateArray((newRow - borderRows) / 2, (newCol - borderCols) / 2)))
+                    !(isAtomSite && stateArray((newRow - borderRows) / 2, (newCol - borderCols) / 2)))
                 {
                     distancePathway(newRow, newCol) = dist;
                     coordsToSetDistNext->push_back(std::tuple(newRow, newCol));
-                    if(newRow == (int)borderRows || newRow == (int)(pathway.rows() - borderRows - 1) || 
-                        newCol == (int)borderCols || newCol == (int)(pathway.cols() - borderCols - 1))
+                    if(isAtomSite && ((arrayInfo.vertical && dumpingIndicesACSet.contains((newRow - borderRows) / 2)) || 
+                        (!arrayInfo.vertical && dumpingIndicesACSet.contains((newCol - borderCols) / 2))))
                     {
                         targetSite = std::tuple(newRow, newCol);
                     }
@@ -157,9 +132,8 @@ bool removeAtom(ArrayAccessor& stateArray, size_t row, size_t col, std::vector<P
     }
 }
 
-int removeSuperfluousAtoms(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t compZoneRowEnd, 
-    size_t compZoneColStart, size_t compZoneColEnd, ArrayAccessor& targetGeometry, std::vector<ParallelMove>& moveList, 
-    Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> pathway, size_t borderRows, size_t borderCols,
+int removeSuperfluousAtoms(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<TargetState, 2>& targetGeometry, MinimalArrayInformation& arrayInfo, 
+    std::vector<ParallelMove>& moveList, Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> pathway, size_t borderRows, size_t borderCols,
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> distancePathway,
     Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> occMask, std::shared_ptr<spdlog::logger> logger)
 {
@@ -171,11 +145,11 @@ int removeSuperfluousAtoms(ArrayAccessor& stateArray, size_t compZoneRowStart, s
 
     std::vector<std::tuple<size_t,size_t>> primaryAtomsToBeRemoved;
     std::set<std::tuple<size_t,size_t>> allAtomsToBeRemoved;
-    for(size_t row = compZoneRowStart; row < compZoneRowEnd; row++)
+    for(size_t row = arrayInfo.normalIndices.firstRowOrXC; row < arrayInfo.normalIndices.lastRowOrXCExcl; row++)
     {
-        for(size_t col = compZoneColStart; col < compZoneColEnd; col++)
+        for(size_t col = arrayInfo.normalIndices.firstColOrAC; col < arrayInfo.normalIndices.lastColOrACExcl; col++)
         {
-            if(!targetGeometry(row - compZoneRowStart, col - compZoneColStart) && stateArray(row, col))
+            if(targetGeometry(row, col) == TargetState::EMPTY && stateArray(row, col))
             {
                 // Remove superfluous atom
                 primaryAtomsToBeRemoved.push_back(std::tuple(row,col));
@@ -203,7 +177,7 @@ int removeSuperfluousAtoms(ArrayAccessor& stateArray, size_t compZoneRowStart, s
                 int otherRow = (int)row + blockingRow - halfBlockingRows;
                 int otherCol = (int)col + blockingCol - halfBlockingCols;
                 if(blockingMask(blockingRow, blockingCol) && isInCompZone(otherRow, otherCol, 
-                        compZoneRowStart, compZoneRowEnd, compZoneColStart, compZoneColEnd) &&
+                    arrayInfo.normalIndices.firstRowOrXC, arrayInfo.normalIndices.lastRowOrXCExcl, arrayInfo.normalIndices.firstColOrAC, arrayInfo.normalIndices.lastColOrACExcl) &&
                     stateArray(otherRow, otherCol) && !allAtomsToBeRemoved.contains(std::tuple(otherRow, otherCol)))
                 {
                     primaryAtomsToBeRemoved.push_back(std::tuple(otherRow, otherCol));
@@ -216,17 +190,20 @@ int removeSuperfluousAtoms(ArrayAccessor& stateArray, size_t compZoneRowStart, s
     int remainingAtomsToRemove = 0;
     for(auto [row, col] : allAtomsToBeRemoved)
     {
-        if(!removeAtom(stateArray, row, col, moveList, pathway, borderRows, borderCols, distancePathway, logger))
+        if(targetGeometry(row, col) != TargetState::IRRELEVANT)
         {
-            remainingAtomsToRemove++;
+            if(!removeAtom(stateArray, row, col, moveList, arrayInfo, pathway, borderRows, borderCols, distancePathway, logger))
+            {
+                remainingAtomsToRemove++;
+            }
         }
     }
 
     return remainingAtomsToRemove;
 }
 
-int fixVacancies(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t compZoneRowEnd, 
-    size_t compZoneColStart, size_t compZoneColEnd, ArrayAccessor& targetGeometry, std::vector<ParallelMove>& moveList, 
+int fixVacancies(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<TargetState, 2>& targetGeometry, 
+    std::vector<ParallelMove>& moveList, MinimalArrayInformation arrayInfo,
     Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> pathway, size_t borderRows, size_t borderCols,
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> distancePathway,
     Eigen::Ref<Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic>> occMask, std::shared_ptr<spdlog::logger> logger)
@@ -236,11 +213,11 @@ int fixVacancies(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t comp
 
     int problemsRemaining = 0;
 
-    for(size_t row = compZoneRowStart; row < compZoneRowEnd; row++)
+    for(size_t row = arrayInfo.normalIndices.firstRowOrXC; row < arrayInfo.normalIndices.lastRowOrXCExcl; row++)
     {
-        for(size_t col = compZoneColStart; col < compZoneColEnd; col++)
+        for(size_t col = arrayInfo.normalIndices.firstColOrAC; col < arrayInfo.normalIndices.lastColOrACExcl; col++)
         {
-            if(targetGeometry(row - compZoneRowStart, col - compZoneColStart) && !stateArray(row, col))
+            if(targetGeometry(row, col) == TargetState::OCCUPIED && !stateArray(row, col))
             {
                 std::vector<std::tuple<size_t,size_t>> coordsToSetDist1, coordsToSetDist2;
                 std::vector<std::tuple<size_t,size_t>> *coordsToSetDist = &coordsToSetDist1, *coordsToSetDistNext = &coordsToSetDist2;
@@ -268,9 +245,7 @@ int fixVacancies(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t comp
                                 {
                                     int trapRow = (newRow - borderRows) / 2;
                                     int trapCol = (newCol - borderCols) / 2;
-                                    if((!isInCompZone(trapRow, trapCol, compZoneRowStart, compZoneRowEnd, compZoneColStart, 
-                                        compZoneColEnd) || !targetGeometry(trapRow - compZoneRowStart, trapCol - compZoneColStart)) &&
-                                        stateArray(trapRow, trapCol))
+                                    if(targetGeometry(trapRow, trapCol) != TargetState::OCCUPIED && stateArray(trapRow, trapCol))
                                     {
                                         sourceAtom = std::tuple(newRow, newCol);
                                         break;
@@ -347,7 +322,7 @@ int fixVacancies(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t comp
                     problemsRemaining++;
                 }
             }
-            else if(!targetGeometry(row - compZoneRowStart, col - compZoneColStart) && stateArray(row, col))
+            else if(targetGeometry(row, col) == TargetState::EMPTY && stateArray(row, col))
             {
                 problemsRemaining++;
             }
@@ -357,14 +332,65 @@ int fixVacancies(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t comp
     return problemsRemaining;
 }
 
+// Gather general information about the array and save in struct for later use
+std::vector<std::vector<int>> findUsableAtomsByRow(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<TargetState, 2>& targetGeometry, 
+    MinimalArrayInformation& arrayInfo, std::shared_ptr<spdlog::logger> logger)
+{
+    std::vector<std::vector<int>> usableAtomsByRow;
+    usableAtomsByRow.resize(stateArray.rows());
+
+    // Create mask where true existing atoms would prevent an atoms usability
+    auto usabilityPreventingNeighborhoodMask = generateMask(Config::getInstance().minDistFromOccSites);
+    int usabilityPreventingNeighborhoodMaskRowDist = usabilityPreventingNeighborhoodMask.rows() / 2;
+    int usabilityPreventingNeighborhoodMaskColDist = usabilityPreventingNeighborhoodMask.cols() / 2;
+    usabilityPreventingNeighborhoodMask(usabilityPreventingNeighborhoodMaskRowDist, usabilityPreventingNeighborhoodMaskColDist) = false;
+
+    // Iterate over array, check for usability-preventing neighbors, and sort into structure accordingly
+    for(size_t row = arrayInfo.normalIndices.firstRowOrXC; row < arrayInfo.normalIndices.lastRowOrXCExcl && row < stateArray.rows(); row++)
+    {
+        for(size_t col = arrayInfo.normalIndices.firstColOrAC; col < arrayInfo.normalIndices.lastColOrACExcl && col < stateArray.cols(); col++)
+        {
+            if(stateArray(row,col))
+            {
+                bool usable = true;
+                for(int rowShift = -usabilityPreventingNeighborhoodMaskRowDist; 
+                    usable && rowShift <= usabilityPreventingNeighborhoodMaskRowDist; rowShift++)
+                {
+                    int shiftedRow = (int)row + rowShift;
+                    if(shiftedRow >= 0 && shiftedRow < (int)stateArray.rows())
+                    {
+                        for(int colShift = -usabilityPreventingNeighborhoodMaskColDist; 
+                            colShift <= usabilityPreventingNeighborhoodMaskColDist; colShift++)
+                        {
+                            int shiftedCol = (int)col + colShift;
+                            if(shiftedCol >= 0 && shiftedCol < (int)stateArray.cols() && usabilityPreventingNeighborhoodMask(
+                                rowShift + usabilityPreventingNeighborhoodMaskRowDist, 
+                                colShift + usabilityPreventingNeighborhoodMaskColDist) && 
+                                stateArray(shiftedRow, shiftedCol))
+                            {
+                                usable = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if(usable)
+                {
+                    usableAtomsByRow[row].push_back(col);
+                }
+            }
+        }
+    }
+
+    return usableAtomsByRow;
+}
+
 std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    const py::array_t<TargetState>& targetGeometry)
+    const py::array_t<TargetState>& targetGeometry, MinimalArrayInformation& arrayInfo)
 {
     // Init logger
     std::shared_ptr<spdlog::logger> logger = Config::getInstance().getLatticeByRowLogger();
-    logger->error("Not yet adapted for new lattice sorting. Aborting");
-    return std::nullopt;
 
     auto targetGeometryUnchecked = targetGeometry.unchecked<2>();
 
@@ -383,12 +409,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
 
     std::vector<ParallelMove> moveList;
 
-    // Differentiate between unusable (too close to each other) and usable atoms and add into per-index buffers
-    std::optional<ArrayInformation> arrayInfo = conductInitialAnalysis(stateArrayAccessor, targetGeometryUnchecked, logger);
-    if(!arrayInfo.has_value())
-    {
-        return std::nullopt;
-    }
+    auto usableAtomsByRow = findUsableAtomsByRow(stateArrayAccessor, targetGeometryUnchecked, arrayInfo, logger);
 
     Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic> occMask = 
         generateMask(Config::getInstance().minDistFromOccSites, 0.5).cast<int>();
@@ -402,7 +423,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
 
     for(int row = 0; row < stateArray.rows(); row++)
     {
-        for(size_t col : arrayInfo.value().usableAtomsPerXCIndex[row])
+        for(size_t col : usableAtomsByRow[row])
         {
             if(targetGeometryUnchecked(row, col) != TargetState::OCCUPIED)
             {
@@ -441,18 +462,18 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
         }
     }
 
-    /*auto remainingProblems = fixVacancies(stateArrayAccessor, targetGeometryUnchecked, 
-        moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
+    auto remainingProblems = fixVacancies(stateArrayAccessor, targetGeometryUnchecked, 
+        moveList, arrayInfo, pathway, borderRows, borderCols, distancePathway, occMask, logger);
     if(remainingProblems > 0)
     {
         int previouslyRemainingSuperfluousAtoms = INT_MAX;
         int remainingSuperfluousAtoms = removeSuperfluousAtoms(stateArrayAccessor, targetGeometryUnchecked, 
-            moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
+            arrayInfo, moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
         while(remainingSuperfluousAtoms > 0 && remainingSuperfluousAtoms < previouslyRemainingSuperfluousAtoms)
         {
             previouslyRemainingSuperfluousAtoms = remainingSuperfluousAtoms;
             remainingSuperfluousAtoms = removeSuperfluousAtoms(stateArrayAccessor, targetGeometryUnchecked, 
-                moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
+                arrayInfo, moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
         }
         if(remainingSuperfluousAtoms > 0)
         {
@@ -460,7 +481,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
             return std::nullopt;
         }
         remainingProblems = fixVacancies(stateArrayAccessor, targetGeometryUnchecked, 
-            moveList, pathway, borderRows, borderCols, distancePathway, occMask, logger);
+            moveList, arrayInfo, pathway, borderRows, borderCols, distancePathway, occMask, logger);
         if(remainingProblems != 0)
         {
             return std::nullopt;
@@ -471,7 +492,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
         return std::nullopt;
     }
 
-    if(Config::getInstance().alwaysGenerateAllAODTones)
+    /*if(Config::getInstance().alwaysGenerateAllAODTones)
     {
         for(auto& move : moveList)
         {

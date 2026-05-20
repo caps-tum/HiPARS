@@ -16,6 +16,18 @@ enum TargetState
     EMPTY, OCCUPIED, IRRELEVANT
 };
 
+struct ArrayBounds
+{
+    unsigned int firstRowOrXC, lastRowOrXCExcl, firstColOrAC, lastColOrACExcl;
+};
+
+struct MinimalArrayInformation
+{
+    std::vector<int> bufferRows, bufferCols, dumpingIndicesAC;
+    bool vertical;
+    ArrayBounds normalIndices;
+};
+
 struct ArrayInformation
 {
     std::vector<std::vector<int>> usableAtomsPerXCIndex, unusableAtomsPerXCIndex, targetSitesPerXCIndex, parkingSitesPerXCIndex;
@@ -23,10 +35,11 @@ struct ArrayInformation
     bool vertical;
 
     // Across channel dir will be abbreviated as XC, along channel as AC
-    unsigned int arraySizeXC, arraySizeAC, maxTonesXC, maxTonesAC, dumpingIndicesLow, dumpingIndicesHigh, 
-        firstNormalIndexXC, lastNormalIndexXCExcl, firstNormalIndexAC, lastNormalIndexACExcl, firstRelevantXC, lastRelevantXCExcl, firstRelevantAC, lastRelevantACExcl;
+    unsigned int arraySizeXC, arraySizeAC, maxTonesXC, maxTonesAC, dumpingIndicesLow, dumpingIndicesHigh;
     double spacingXC, spacingAC;
     int targetGapXC, targetGapAC, sortingChannelWidth;
+
+    ArrayBounds normalIndices, normalIndicesXCAC, relevantIndicesXCAC;
 };
 
 std::optional<std::vector<ParallelMove>> sortLatticeGreedyParallel(
@@ -34,12 +47,12 @@ std::optional<std::vector<ParallelMove>> sortLatticeGreedyParallel(
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& targetGeometry);
 
-std::optional<std::vector<ParallelMove>> sortLatticeByRowParallel(
+std::optional<std::pair<std::vector<ParallelMove>,MinimalArrayInformation>> sortLatticeByRowParallel(
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& stateArray, 
     const py::array_t<TargetState>& targetGeometry);
 std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& stateArray, 
-    const py::array_t<TargetState>& targetGeometry);
+    const py::array_t<TargetState>& targetGeometry, MinimalArrayInformation& arrayInfo);
 
 Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> generateMask(double distance, double spacingFraction = 1);
 Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> generatePathway(size_t borderRows, size_t borderCols, 

@@ -115,10 +115,11 @@ class Sorting:
         :return: A list of moves to sort array or None if sorting has failed. A ParallelMove contains .steps, which is a list of ParallelMoveStep objects, each containing .colSelection and .rowSelection, which are lists of doubles
         :rtype: list[ParallelMove], optional
         """
-        return resorting_cpp.sortLatticeByRowParallel(state_array, target_geometry)
+        moves, self.array_bounds = resorting_cpp.sortLatticeByRowParallel(state_array, target_geometry)#
+        return moves
     
     def fix_lattice_by_row_sorting_deficiencies(self, state_array : np.ndarray, target_geometry : np.ndarray[resorting_cpp.TargetState]):
-        """Function for fixing sorting deficiencies arising during sort_parallel_lattice_by_row
+        """Function for fixing sorting deficiencies arising during sort_parallel_lattice_by_row. May only be called on the same Sorting object on which sort_parallel_lattice_by_row was previously called.
         
         :param state_array: The array of boolean values to be sorted
         :type state_array: np.ndarray[bool]
@@ -127,7 +128,9 @@ class Sorting:
         :return: A list of moves to sort array or None if sorting has failed. A ParallelMove contains .steps, which is a list of ParallelMoveStep objects, each containing .colSelection and .rowSelection, which are lists of doubles
         :rtype: list[ParallelMove], optional
         """
-        return resorting_cpp.fixLatticeByRowSortingDeficiencies(state_array, target_geometry)
+        if not hasattr(self, 'array_bounds') or self.array_bounds is None:
+            raise RuntimeError("sort_parallel_lattice_by_row needs to be called before fix_lattice_by_row_sorting_deficiencies")
+        return resorting_cpp.fixLatticeByRowSortingDeficiencies(state_array, target_geometry, self.array_bounds)
 
     def flush_logs(self):
         """Function for flushing the logs

@@ -57,6 +57,43 @@ PYBIND11_MODULE(resorting_cpp, m) {
     .export_values();
 #endif
 
+    py::class_<ArrayBounds>(m, "ArrayBounds", R"pbdoc(
+    A class holding 4 values describing the start and end indices of a region. May hold either row/column or cross-/along channel values depending on context.
+)pbdoc")
+    .def(py::init())
+    .def_readwrite("firstRowOrXC", &ArrayBounds::firstRowOrXC, R"pbdoc(
+    :unsigned int: First row or across-channel-dimension (XC) index. Inclusive
+)pbdoc")
+    .def_readwrite("lastRowOrXCExcl", &ArrayBounds::lastRowOrXCExcl, R"pbdoc(
+    :unsigned int: Last row or across-channel-dimension (XC) index. Exclusive
+)pbdoc")
+    .def_readwrite("firstColOrAC", &ArrayBounds::firstColOrAC, R"pbdoc(
+    :unsigned int: First column or along-channel-dimension (AC) index. Inclusive
+)pbdoc")
+    .def_readwrite("lastColOrACExcl", &ArrayBounds::lastColOrACExcl, R"pbdoc(
+    :unsigned int: Last column or along-channel-dimension (AC) index. Exclusive
+)pbdoc");
+
+    py::class_<MinimalArrayInformation>(m, "MinimalArrayInformation", R"pbdoc(
+    A class holding the minimal information about the array to subsequently fix sorting mistake.
+)pbdoc")
+    .def(py::init())
+    .def_readwrite("bufferRows", &MinimalArrayInformation::bufferRows, R"pbdoc(
+    :list[int]: List of rows that may be added to generate additional tones if alwaysGenerateAllAODTones is true
+)pbdoc")
+    .def_readwrite("bufferCols", &MinimalArrayInformation::bufferCols, R"pbdoc(
+    :list[int]: List of columns that may be added to generate additional tones if alwaysGenerateAllAODTones is true
+)pbdoc")
+    .def_readwrite("dumpingIndicesAC", &MinimalArrayInformation::dumpingIndicesAC, R"pbdoc(
+    :list[int]: List of indices along sorting channel in which unusable atoms are to be dumped
+)pbdoc")
+    .def_readwrite("vertical", &MinimalArrayInformation::vertical, R"pbdoc(
+    :bool: Whether the sorting channel is vertical
+)pbdoc")
+    .def_readwrite("normalIndices", &MinimalArrayInformation::normalIndices, R"pbdoc(
+    :ArrayBounds: Struct containing bounds within which no buffer or dumping zones are located
+)pbdoc");
+
     py::class_<Config, std::unique_ptr<Config, py::nodelete>>(m, "Config", R"pbdoc(
     A class for configuring the sorting algorithm. At the moment, this is only used for configuring the logger.
 )pbdoc")
@@ -222,17 +259,19 @@ PYBIND11_MODULE(resorting_cpp, m) {
     :param targetGeometry: Array of TargetState values of size equal to stateArray specifying target occupancy
     :type targetGeometry: numpy.ndarray[TargetState[m, n]]
     :return: A list of moves to sort array or None if sorting has failed.
-    :rtype: list[ParallelMove] | None
+    :rtype: pair[list[ParallelMove],MinimalArrayInformation] | None
     )pbdoc");
 
     m.def("fixLatticeByRowSortingDeficiencies", &fixLatticeByRowSortingDeficiencies, "A function that fixes deficiencies that arose while sorting using sortLatticeByRowParallel", 
-        py::arg("stateArray"), py::arg("targetGeometry"), R"pbdoc(
+        py::arg("stateArray"), py::arg("targetGeometry"), py::arg("arrayInfo"), R"pbdoc(
     A function that fixes deficiencies that arose while sorting using sortLatticeByRowParallel
 
     :param stateArray: The array of boolean values to be sorted
     :type stateArray: numpy.ndarray[bool[m, n], flags.writeable]
     :param targetGeometry: Array of TargetState values of size equal to stateArray specifying target occupancy
     :type targetGeometry: numpy.ndarray[TargetState[m, n]]
+    :param arrayInfo: Information about the array to be fixed. Returned from sortLatticeByRowParallel
+    :type arrayInfo: MinimalArrayInformation
     :return: A list of moves to sort array or None if sorting has failed.
     :rtype: list[ParallelMove] | None
     )pbdoc");

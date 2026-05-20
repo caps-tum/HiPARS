@@ -70,7 +70,7 @@ std::optional<std::pair<int,int>> determineBestStartPosition(ArrayAccessor& stat
 
             // Check if atoms numbers suffice. If so, use it if it is the closest index to the center yet
             // This could be done more efficiently
-            double dist = abs((double)(arrayInfo.lastNormalIndexXCExcl - arrayInfo.firstNormalIndexXC) / 2. - 
+            double dist = abs((double)(arrayInfo.normalIndicesXCAC.lastRowOrXCExcl - arrayInfo.normalIndicesXCAC.firstRowOrXC) / 2. - 
                 ((double)(lastIndexBeforeChannel + arrayInfo.sortingChannelWidth) + 1.5));
             if(usableBeforeChannel >= requiredBeforeChannel && usableAfterChannel >= requiredAfterChannel && 
                 (!bestLastIndexBeforeChannel.has_value() || !bestDist.has_value() || dist < bestDist.value()))
@@ -105,11 +105,11 @@ std::optional<std::pair<int,int>> determineBestStartPosition(ArrayAccessor& stat
             [](unsigned int init, const auto& elem) { return init + elem.size(); }) - totalTargetSites;
         if(excessStartingLowIndex >= 0)
         {
-            return std::pair(arrayInfo.firstNormalIndexXC, arrayInfo.firstNormalIndexXC + arrayInfo.sortingChannelWidth + 1);
+            return std::pair(arrayInfo.normalIndicesXCAC.firstRowOrXC, arrayInfo.normalIndicesXCAC.firstRowOrXC + arrayInfo.sortingChannelWidth + 1);
         }
         else if(excessStartingHighIndex >= 0)
         {
-            return std::pair(arrayInfo.lastNormalIndexXCExcl - arrayInfo.sortingChannelWidth - 1, arrayInfo.lastNormalIndexXCExcl);
+            return std::pair(arrayInfo.normalIndicesXCAC.lastRowOrXCExcl - arrayInfo.sortingChannelWidth - 1, arrayInfo.normalIndicesXCAC.lastRowOrXCExcl);
         }
         else
         {
@@ -224,7 +224,7 @@ void clearChannel(ArrayAccessor& stateArray, int startIndex, int endIndexExcl, b
     {
         auto [startSelectionXC, endSelectionXC] = findChannelIndicesXC(indicesXC, startIndex, endIndexExcl, arrayInfo, logger);
 
-        int nextIndexToDealWithLow = arrayInfo.firstNormalIndexAC, nextIndexToDealWithHigh = arrayInfo.lastNormalIndexACExcl - 1;
+        int nextIndexToDealWithLow = arrayInfo.normalIndicesXCAC.firstColOrAC, nextIndexToDealWithHigh = arrayInfo.normalIndicesXCAC.lastColOrACExcl - 1;
         while(nextIndexToDealWithLow < nextIndexToDealWithHigh)
         {
             // Create move to remove atoms from sorting channel
@@ -342,11 +342,11 @@ bool clearBufferAndDumpingIndicesXC(ArrayAccessor& stateArray, std::vector<Paral
     ArrayInformation& arrayInfo, std::shared_ptr<spdlog::logger> logger)
 {    
     std::vector<int> bufferIndices, doneIndices;
-    for(unsigned int i = 0; i < arrayInfo.firstNormalIndexXC; i++)
+    for(unsigned int i = 0; i < arrayInfo.normalIndicesXCAC.firstRowOrXC; i++)
     {
         bufferIndices.push_back(i);
     }
-    for(unsigned int i = arrayInfo.lastNormalIndexXCExcl; i < arrayInfo.arraySizeXC; i++)
+    for(unsigned int i = arrayInfo.normalIndicesXCAC.lastRowOrXCExcl; i < arrayInfo.arraySizeXC; i++)
     {
         bufferIndices.push_back(i);
     }
@@ -422,7 +422,7 @@ bool clearBufferAndDumpingIndicesXC(ArrayAccessor& stateArray, std::vector<Paral
             doneIndices.push_back(i);
         }
 
-        int nextIndexToDealWithLow = arrayInfo.firstNormalIndexAC, nextIndexToDealWithHigh = arrayInfo.lastNormalIndexACExcl - 1;
+        int nextIndexToDealWithLow = arrayInfo.normalIndicesXCAC.firstColOrAC, nextIndexToDealWithHigh = arrayInfo.normalIndicesXCAC.lastColOrACExcl - 1;
         while(nextIndexToDealWithLow < nextIndexToDealWithHigh)
         {
             // Create move to remove atoms from sorting channel
@@ -703,8 +703,8 @@ bool createCombinedMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>& m
 
     if(startIndicesLowIndex.size() > 0 && startIndicesHighIndex.size() > 0 &&
         arrayInfo.maxTonesXC >= 2 && 2 * arrayInfo.maxTonesAC <= Config::getInstance().aodTotalLimit && 
-        (targetCountLowIndex > 0 || targetCountHighIndex > 0) && indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && 
-        indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl)
+        (targetCountLowIndex > 0 || targetCountHighIndex > 0) && indexXC[0] >= (int)arrayInfo.normalIndicesXCAC.firstRowOrXC && 
+        indexXC[1] < (int)arrayInfo.normalIndicesXCAC.lastRowOrXCExcl)
     {
         // If spacing is sufficient, use union
         // Otherwise, shadow traps might interfere so in that case only use intersection
@@ -1017,7 +1017,7 @@ bool createCombinedMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>& m
     }
 
     // For remaining indices, create individual moves
-    if(indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && startIndicesLowIndex.size() > 0 && targetCountLowIndex > 0)
+    if(indexXC[0] >= (int)arrayInfo.normalIndicesXCAC.firstRowOrXC && startIndicesLowIndex.size() > 0 && targetCountLowIndex > 0)
     {
         if(!createSingleIndexMoves(stateArray, moveList, startIndicesLowIndex, -1, endIndicesLowIndex, endIndexXCLowIndex, 
             targetCountLowIndex, indexXC[0], arrayInfo, parkingMove, dumpingMove, logger))
@@ -1025,7 +1025,7 @@ bool createCombinedMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>& m
             return false;
         }
     }
-    if(indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl && startIndicesHighIndex.size() > 0 && targetCountHighIndex > 0)
+    if(indexXC[1] < (int)arrayInfo.normalIndicesXCAC.lastRowOrXCExcl && startIndicesHighIndex.size() > 0 && targetCountHighIndex > 0)
     {
         if(!createSingleIndexMoves(stateArray, moveList, startIndicesHighIndex, 1, endIndicesHighIndex, endIndexXCHighIndex, 
             targetCountHighIndex, indexXC[1], arrayInfo, parkingMove, dumpingMove, logger))
@@ -1041,22 +1041,23 @@ bool createCombinedMoves(ArrayAccessor& stateArray, std::vector<ParallelMove>& m
 bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> startIndex, std::vector<ParallelMove>& moveList, 
     ArrayInformation& arrayInfo, std::shared_ptr<spdlog::logger> logger)
 {
+    int firstNormalIndexXC = arrayInfo.normalIndicesXCAC.firstRowOrXC, lastNormalIndexXCExcl = arrayInfo.normalIndicesXCAC.lastRowOrXCExcl;
     // If sorting channel starts in the middle, there are two indices: one going up and one down, 
     // [0] means index is decreasing, [1] means increasing
     int indexXC[2], currentTargetIndexXC[2];
-    if(std::get<0>(startIndex) <= (int)arrayInfo.firstNormalIndexXC)
+    if(std::get<0>(startIndex) <= firstNormalIndexXC)
     {
         indexXC[0] = -1;
-        indexXC[1] = arrayInfo.firstNormalIndexXC + arrayInfo.sortingChannelWidth + 1;
+        indexXC[1] = firstNormalIndexXC + arrayInfo.sortingChannelWidth + 1;
         currentTargetIndexXC[0] = -1;
-        currentTargetIndexXC[1] = arrayInfo.firstNormalIndexXC;
+        currentTargetIndexXC[1] = firstNormalIndexXC;
     }
-    else if(std::get<1>(startIndex) >= (int)arrayInfo.lastNormalIndexXCExcl)
+    else if(std::get<1>(startIndex) >= lastNormalIndexXCExcl)
     {
         indexXC[0] = arrayInfo.arraySizeXC;
-        indexXC[1] = arrayInfo.lastNormalIndexXCExcl - arrayInfo.sortingChannelWidth - 2;
+        indexXC[1] = lastNormalIndexXCExcl - arrayInfo.sortingChannelWidth - 2;
         currentTargetIndexXC[0] = arrayInfo.arraySizeXC;
-        currentTargetIndexXC[1] = arrayInfo.lastNormalIndexXCExcl - 1;
+        currentTargetIndexXC[1] = lastNormalIndexXCExcl - 1;
     }
     else
     {
@@ -1069,7 +1070,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
     std::vector<int> parkingSpotsRemainingAtCurrentIndexXC[2];
     for(size_t i = 0; i < 2; i++)
     {
-        if(currentTargetIndexXC[i] >= (int)arrayInfo.firstNormalIndexXC && currentTargetIndexXC[i] < (int)arrayInfo.lastNormalIndexXCExcl)
+        if(currentTargetIndexXC[i] >= firstNormalIndexXC && currentTargetIndexXC[i] < lastNormalIndexXCExcl)
         {
             parkingSpotsRemainingAtCurrentIndexXC[i] = arrayInfo.parkingSitesPerXCIndex[currentTargetIndexXC[i]];
         }
@@ -1079,7 +1080,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
     unsigned int totalRequiredAtoms = std::accumulate(arrayInfo.targetSitesPerXCIndex.begin(), arrayInfo.targetSitesPerXCIndex.end(), 0u, 
         [](unsigned int init, const auto& elem) { return init + elem.size(); });
 
-    while(indexXC[0] >= (int)arrayInfo.firstNormalIndexXC || indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl)
+    while(indexXC[0] >= firstNormalIndexXC || indexXC[1] < lastNormalIndexXCExcl)
     {
         if(logger->level() <= spdlog::level::debug)
         {
@@ -1114,7 +1115,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
             logger->debug(unusableAtomsStr.str());
         }
 
-        if(indexXC[0] < (int)arrayInfo.firstRelevantXC && indexXC[1] >= (int)arrayInfo.lastRelevantXCExcl && totalRequiredAtoms == 0)
+        if(indexXC[0] < (int)arrayInfo.relevantIndicesXCAC.firstRowOrXC && indexXC[1] >= (int)arrayInfo.relevantIndicesXCAC.lastRowOrXCExcl && totalRequiredAtoms == 0)
         {
             // If both indices are outside computational zone and we don't need more atoms, then we are done
             return true;
@@ -1124,7 +1125,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
         std::set<int> excludedIndicesForRemovalAndParkingMoves;
         for(size_t i = 0; i < 2; i++)
         {
-            if(indexXC[i] >= (int)arrayInfo.firstNormalIndexXC && indexXC[i] < (int)arrayInfo.lastNormalIndexXCExcl)
+            if(indexXC[i] >= firstNormalIndexXC && indexXC[i] < lastNormalIndexXCExcl)
             {
                 targetIndexXC[i] = indexXC[i] - dir[i] * (arrayInfo.sortingChannelWidth + 1);
                 requiredAtoms[i] = arrayInfo.targetSitesPerXCIndex[currentTargetIndexXC[i]].size();
@@ -1176,7 +1177,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
         }
         
         // Remove unusable atoms
-        if(indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl)
+        if(indexXC[0] >= firstNormalIndexXC && indexXC[1] < lastNormalIndexXCExcl)
         {
             if(!createCombinedMoves(stateArray, moveList, excludedIndicesForRemovalAndParkingMoves, 
                 arrayInfo.unusableAtomsPerXCIndex[indexXC[0]], arrayInfo.unusableAtomsPerXCIndex[indexXC[1]], 
@@ -1187,7 +1188,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
                 return false;
             }
         }
-        else if(indexXC[0] >= (int)arrayInfo.firstNormalIndexXC)
+        else if(indexXC[0] >= firstNormalIndexXC)
         {
             if(!createSingleIndexMoves(stateArray, moveList, arrayInfo.unusableAtomsPerXCIndex[indexXC[0]], -1, 
                 arrayInfo.dumpingIndicesAC, currentTargetIndexXC[0], arrayInfo.unusableAtomsPerXCIndex[indexXC[0]].size(), 
@@ -1196,7 +1197,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
                 return false;
             }
         }
-        else if(indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl)
+        else if(indexXC[1] < lastNormalIndexXCExcl)
         {
             if(!createSingleIndexMoves(stateArray, moveList, arrayInfo.unusableAtomsPerXCIndex[indexXC[1]], 1, 
                 arrayInfo.dumpingIndicesAC, currentTargetIndexXC[1], arrayInfo.unusableAtomsPerXCIndex[indexXC[1]].size(), 
@@ -1206,11 +1207,11 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
             }
         };
 
-        while((indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && !arrayInfo.usableAtomsPerXCIndex[indexXC[0]].empty()) || 
-            (indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl && !arrayInfo.usableAtomsPerXCIndex[indexXC[1]].empty()))
+        while((indexXC[0] >= firstNormalIndexXC && !arrayInfo.usableAtomsPerXCIndex[indexXC[0]].empty()) || 
+            (indexXC[1] < lastNormalIndexXCExcl && !arrayInfo.usableAtomsPerXCIndex[indexXC[1]].empty()))
         {
-            bool lowIndexContainsAtoms = indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && !arrayInfo.usableAtomsPerXCIndex[indexXC[0]].empty();
-            bool highIndexContainsAtoms = indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl && !arrayInfo.usableAtomsPerXCIndex[indexXC[1]].empty();
+            bool lowIndexContainsAtoms = indexXC[0] >= firstNormalIndexXC && !arrayInfo.usableAtomsPerXCIndex[indexXC[0]].empty();
+            bool highIndexContainsAtoms = indexXC[1] < lastNormalIndexXCExcl && !arrayInfo.usableAtomsPerXCIndex[indexXC[1]].empty();
             // If there are too many atoms to use, move excess atoms to parking spots
             if(lowIndexContainsAtoms && highIndexContainsAtoms)
             {
@@ -1264,10 +1265,10 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
 
             // Increase row if there are no target sites
             bool atLeastOneWasMoved = false;
-            bool lowIndexSideExists = indexXC[0] >= (int)arrayInfo.firstNormalIndexXC && indexXC[0] < (int)arrayInfo.lastNormalIndexXCExcl && 
-                currentTargetIndexXC[0] >= (int)arrayInfo.firstNormalIndexXC && currentTargetIndexXC[0] < (int)arrayInfo.lastNormalIndexXCExcl;
-            bool highIndexSideExists = indexXC[1] >= (int)arrayInfo.firstNormalIndexXC && indexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl && 
-                currentTargetIndexXC[1] >= (int)arrayInfo.firstNormalIndexXC && currentTargetIndexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl;
+            bool lowIndexSideExists = indexXC[0] >= firstNormalIndexXC && indexXC[0] < lastNormalIndexXCExcl && 
+                currentTargetIndexXC[0] >= firstNormalIndexXC && currentTargetIndexXC[0] < lastNormalIndexXCExcl;
+            bool highIndexSideExists = indexXC[1] >= firstNormalIndexXC && indexXC[1] < lastNormalIndexXCExcl && 
+                currentTargetIndexXC[1] >= firstNormalIndexXC && currentTargetIndexXC[1] < lastNormalIndexXCExcl;
 
             if(lowIndexSideExists && arrayInfo.targetSitesPerXCIndex[currentTargetIndexXC[0]].empty() && 
                 currentTargetIndexXC[0] > (int)targetIndexXC[0] && currentTargetIndexXC[0] > 0)
@@ -1278,7 +1279,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
             }
 
             if(highIndexSideExists && arrayInfo.targetSitesPerXCIndex[currentTargetIndexXC[1]].empty() &&
-                currentTargetIndexXC[1] < (int)targetIndexXC[1] && currentTargetIndexXC[1] < (int)arrayInfo.lastNormalIndexXCExcl - 1)
+                currentTargetIndexXC[1] < (int)targetIndexXC[1] && currentTargetIndexXC[1] < lastNormalIndexXCExcl - 1)
             {
                 atLeastOneWasMoved = true;
                 currentTargetIndexXC[1]++;
@@ -1335,7 +1336,7 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
                     unsigned int sortedAtomsThisSide = requiredAtomsBefore[side] - arrayInfo.targetSitesPerXCIndex[currentTargetIndexXC[side]].size();
                     requiredAtoms[side] -= sortedAtomsThisSide;
                     totalRequiredAtoms -= sortedAtomsThisSide;
-                    if(indexXC[side] >= (int)arrayInfo.firstNormalIndexXC && indexXC[side] < (int)arrayInfo.lastNormalIndexXCExcl)
+                    if(indexXC[side] >= firstNormalIndexXC && indexXC[side] < lastNormalIndexXCExcl)
                     {
                         for(const auto& usableIndex : arrayInfo.usableAtomsPerXCIndex[indexXC[side]])
                         {
@@ -1424,8 +1425,8 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
     usabilityPreventingNeighborhoodMask(usabilityPreventingNeighborhoodMaskRowDist, usabilityPreventingNeighborhoodMaskColDist) = false;
 
     // Iterate over array, check for usability-preventing neighbors, and sort into structure accordingly
-    int maxIrrelevantRowLow = -1, minIrrelevantRowHigh = stateArray.rows(), 
-        maxIrrelevantColLow = -1, minIrrelevantColHigh = stateArray.cols();
+    int maxIrrelevantRowLow = -1, maxIrrelevantColLow = -1;
+    unsigned int minIrrelevantRowHigh = stateArray.rows(), minIrrelevantColHigh = stateArray.cols();
     for(size_t row = 0; row < stateArray.rows(); row++)
     {
         bool fullyIrrelevant = true;
@@ -1502,7 +1503,7 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
     
     double currentBufferRowLow = 0, currentBufferRowHigh = stateArray.rows() - 1, 
         currentBufferColLow = 0, currentBufferColHigh = stateArray.cols() - 1;
-    int firstNormalRow = 0, lastNormalRowExcl = stateArray.rows(), firstNormalCol = 0, lastNormalColExcl = stateArray.cols();
+    unsigned int firstNormalRow = 0, lastNormalRowExcl = stateArray.rows(), firstNormalCol = 0, lastNormalColExcl = stateArray.cols();
     if(Config::getInstance().alwaysGenerateAllAODTones)
     {
         double rowBufferSpacing = ceil(Config::getInstance().minAodSpacing / Config::getInstance().rowSpacing);
@@ -1586,7 +1587,7 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
             arrayInfo.dumpingIndicesAC[arrayInfo.dumpingIndicesLow++] = nextLowestRow;
             firstNormalRow = nextLowestRow + targetRowGap;
         }
-        for(int nextHighestRow = floor(currentBufferRowHigh); nextHighestRow >= minIrrelevantRowHigh && 
+        for(int nextHighestRow = floor(currentBufferRowHigh); nextHighestRow >= (int)minIrrelevantRowHigh && 
             arrayInfo.dumpingIndicesLow + arrayInfo.dumpingIndicesHigh < arrayInfo.maxTonesAC; nextHighestRow -= dumpingSpacing)
         {
             arrayInfo.dumpingIndicesAC[insertionLocation--] = nextHighestRow;
@@ -1602,7 +1603,7 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
             arrayInfo.dumpingIndicesAC[arrayInfo.dumpingIndicesLow++] = nextLowestCol;
             firstNormalCol = nextLowestCol + targetColGap;
         }
-        for(int nextHighestCol = floor(currentBufferColHigh); nextHighestCol >= minIrrelevantColHigh && 
+        for(int nextHighestCol = floor(currentBufferColHigh); nextHighestCol >= (int)minIrrelevantColHigh && 
             arrayInfo.dumpingIndicesLow + arrayInfo.dumpingIndicesHigh < arrayInfo.maxTonesAC; nextHighestCol -= dumpingSpacing)
         {
             arrayInfo.dumpingIndicesAC[insertionLocation--] = nextHighestCol;
@@ -1622,33 +1623,23 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
     arrayInfo.targetSitesPerXCIndex.resize(arrayInfo.arraySizeXC);
     arrayInfo.parkingSitesPerXCIndex.resize(arrayInfo.arraySizeXC);
 
+    arrayInfo.normalIndices = {firstNormalRow, lastNormalRowExcl, firstNormalCol, lastNormalColExcl};
+
     if(arrayInfo.vertical)
     {
-        arrayInfo.firstRelevantXC = maxIrrelevantColLow + 1;
-        arrayInfo.lastRelevantXCExcl = minIrrelevantColHigh;
-        arrayInfo.firstRelevantAC = maxIrrelevantRowLow + 1;
-        arrayInfo.lastRelevantACExcl = minIrrelevantRowHigh;
-        arrayInfo.firstNormalIndexXC = firstNormalCol;
-        arrayInfo.lastNormalIndexXCExcl = lastNormalColExcl;
-        arrayInfo.firstNormalIndexAC = firstNormalRow;
-        arrayInfo.lastNormalIndexACExcl = lastNormalRowExcl;
+        arrayInfo.normalIndicesXCAC = {firstNormalCol, lastNormalColExcl, firstNormalRow, lastNormalRowExcl};
+        arrayInfo.relevantIndicesXCAC = {(unsigned int)(maxIrrelevantColLow + 1), minIrrelevantColHigh, (unsigned int)(maxIrrelevantRowLow + 1), minIrrelevantRowHigh};
     }
     else
     {
-        arrayInfo.firstRelevantXC = maxIrrelevantRowLow + 1;
-        arrayInfo.lastRelevantXCExcl = minIrrelevantRowHigh;
-        arrayInfo.firstRelevantAC = maxIrrelevantColLow + 1;
-        arrayInfo.lastRelevantACExcl = minIrrelevantColHigh;
-        arrayInfo.firstNormalIndexXC = firstNormalRow;
-        arrayInfo.lastNormalIndexXCExcl = lastNormalRowExcl;
-        arrayInfo.firstNormalIndexAC = firstNormalCol;
-        arrayInfo.lastNormalIndexACExcl = lastNormalColExcl;
+        arrayInfo.normalIndicesXCAC = {firstNormalRow, lastNormalRowExcl, firstNormalCol, lastNormalColExcl};
+        arrayInfo.relevantIndicesXCAC = {(unsigned int)(maxIrrelevantRowLow + 1), minIrrelevantRowHigh, (unsigned int)(maxIrrelevantColLow + 1), minIrrelevantColHigh};
     }
 
     // Iterate over array, check for usability-preventing neighbors, and sort into structure accordingly
-    for(size_t row = firstNormalRow; (int)row < lastNormalRowExcl && row < stateArray.rows(); row++)
+    for(size_t row = firstNormalRow; row < lastNormalRowExcl && row < stateArray.rows(); row++)
     {
-        for(size_t col = firstNormalCol; (int)col < lastNormalColExcl && col < stateArray.cols(); col++)
+        for(size_t col = firstNormalCol; col < lastNormalColExcl && col < stateArray.cols(); col++)
         {
             size_t indexXC = arrayInfo.vertical ? col : row;
             size_t indexAC = arrayInfo.vertical ? row : col;
@@ -1677,10 +1668,10 @@ std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray
                                     rowShift + usabilityPreventingNeighborhoodMaskRowDist, 
                                     colShift + usabilityPreventingNeighborhoodMaskColDist) && 
                                     (targetGeometry(shiftedRow, shiftedCol) != TargetState::IRRELEVANT ||
-                                    (indexXC - arrayInfo.firstNormalIndexXC + 1) * arrayInfo.spacingXC < maxMinOccDistMinAODSpacing || 
-                                    (arrayInfo.lastNormalIndexXCExcl - indexXC) * arrayInfo.spacingXC < maxMinOccDistMinAODSpacing || 
-                                    (indexAC - arrayInfo.firstNormalIndexAC + 1) * arrayInfo.spacingAC < maxMinOccDistMinAODSpacing || 
-                                    (arrayInfo.lastNormalIndexACExcl - indexAC) * arrayInfo.spacingAC < maxMinOccDistMinAODSpacing))
+                                    (indexXC - arrayInfo.normalIndicesXCAC.firstRowOrXC + 1) * arrayInfo.spacingXC < maxMinOccDistMinAODSpacing || 
+                                    (arrayInfo.normalIndicesXCAC.lastRowOrXCExcl - indexXC) * arrayInfo.spacingXC < maxMinOccDistMinAODSpacing || 
+                                    (indexAC - arrayInfo.normalIndicesXCAC.firstColOrAC + 1) * arrayInfo.spacingAC < maxMinOccDistMinAODSpacing || 
+                                    (arrayInfo.normalIndicesXCAC.lastColOrACExcl - indexAC) * arrayInfo.spacingAC < maxMinOccDistMinAODSpacing))
                                 {
                                     validParkingSite = false;
                                     break;
@@ -1757,24 +1748,25 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
 {    
     for(int i = 0; i < 2; i++)
     {
-        if((i == 0 && std::get<1>(startIndex) < (int)arrayInfo.lastNormalIndexXCExcl) || (i == 1 && std::get<0>(startIndex) > (int)arrayInfo.firstNormalIndexXC))
+        if((i == 0 && std::get<1>(startIndex) < (int)arrayInfo.normalIndicesXCAC.lastRowOrXCExcl) || 
+            (i == 1 && std::get<0>(startIndex) > (int)arrayInfo.normalIndicesXCAC.firstRowOrXC))
         {
             int lastIndexXCToPossiblyContainsAtoms, targetIndexXC, lastTargetIndexXCExclusive, 
                 targetIndexXCDir, lastIndexXCWithUsableAtoms;
             if(i == 0)
             {
-                lastIndexXCWithUsableAtoms = arrayInfo.lastNormalIndexXCExcl - 1;
-                lastIndexXCToPossiblyContainsAtoms = arrayInfo.firstNormalIndexXC;
+                lastIndexXCWithUsableAtoms = arrayInfo.normalIndicesXCAC.lastRowOrXCExcl - 1;
+                lastIndexXCToPossiblyContainsAtoms = arrayInfo.normalIndicesXCAC.firstRowOrXC;
                 targetIndexXC = std::get<0>(startIndex) + arrayInfo.sortingChannelWidth + 1;
-                lastTargetIndexXCExclusive = arrayInfo.lastNormalIndexXCExcl;
+                lastTargetIndexXCExclusive = arrayInfo.normalIndicesXCAC.lastRowOrXCExcl;
                 targetIndexXCDir = 1;
             }
             else
             {
-                lastIndexXCWithUsableAtoms = arrayInfo.firstNormalIndexXC;
-                lastIndexXCToPossiblyContainsAtoms = arrayInfo.lastNormalIndexXCExcl - 1;
+                lastIndexXCWithUsableAtoms = arrayInfo.normalIndicesXCAC.firstRowOrXC;
+                lastIndexXCToPossiblyContainsAtoms = arrayInfo.normalIndicesXCAC.lastRowOrXCExcl - 1;
                 targetIndexXC = std::get<0>(startIndex) + arrayInfo.sortingChannelWidth;
-                lastTargetIndexXCExclusive = arrayInfo.firstNormalIndexXC - 1;
+                lastTargetIndexXCExclusive = arrayInfo.normalIndicesXCAC.firstRowOrXC - 1;
                 targetIndexXCDir = -1;
             }
             for(; targetIndexXC != lastTargetIndexXCExclusive; targetIndexXC += targetIndexXCDir)
@@ -1786,7 +1778,7 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
                     bool containsUsableAtomsInFullyIrrelevantBorder = false;
                     for(int indexAC : arrayInfo.usableAtomsPerXCIndex[lastIndexXCWithUsableAtoms])
                     {
-                        if(indexAC < (int)arrayInfo.firstRelevantAC || indexAC >= (int)arrayInfo.lastRelevantACExcl)
+                        if(indexAC < (int)arrayInfo.relevantIndicesXCAC.firstColOrAC || indexAC >= (int)arrayInfo.relevantIndicesXCAC.lastColOrACExcl)
                         {
                             containsUsableAtomsInFullyIrrelevantBorder = true;
                         }
@@ -1803,7 +1795,7 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
                         containsUsableAtomsInFullyIrrelevantBorder = false;
                         for(int indexAC : arrayInfo.usableAtomsPerXCIndex[lastIndexXCWithUsableAtoms])
                         {
-                            if(indexAC < (int)arrayInfo.firstRelevantAC || indexAC >= (int)arrayInfo.lastRelevantACExcl)
+                            if(indexAC < (int)arrayInfo.relevantIndicesXCAC.firstColOrAC || indexAC >= (int)arrayInfo.relevantIndicesXCAC.lastColOrACExcl)
                             {
                                 containsUsableAtomsInFullyIrrelevantBorder = true;
                             }
@@ -1824,7 +1816,7 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
                         targetIndexXC : lastIndexXCWithUsableAtoms;
                     channelIndexXC += (double)(arrayInfo.sortingChannelWidth + 1) / 2. * (double)targetIndexXCDir;
 
-                    if(channelIndexXC < (double)arrayInfo.firstNormalIndexXC || channelIndexXC > (double)arrayInfo.lastNormalIndexXCExcl)
+                    if(channelIndexXC < (double)arrayInfo.normalIndicesXCAC.firstRowOrXC || channelIndexXC > (double)arrayInfo.normalIndicesXCAC.lastRowOrXCExcl)
                     {
                         logger->error("Sorting deficiencies could as path would lead through buffer region. Aborting");
                         return false;
@@ -1869,7 +1861,7 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
                         {
                             while(usableAtomAC != arrayInfo.usableAtomsPerXCIndex[lastIndexXCWithUsableAtoms].end() && !startSelectionAC->empty() && 
                                 ((*usableAtomAC - startSelectionAC->back()) * arrayInfo.spacingAC < Config::getInstance().minAodSpacing ||
-                                (*usableAtomAC >= (int)arrayInfo.firstRelevantAC && *usableAtomAC < (int)arrayInfo.lastRelevantACExcl)))
+                                (*usableAtomAC >= (int)arrayInfo.relevantIndicesXCAC.firstColOrAC && *usableAtomAC < (int)arrayInfo.relevantIndicesXCAC.lastColOrACExcl)))
                             {
                                 usableAtomAC++;
                             }
@@ -1922,22 +1914,15 @@ bool resolveSortingDeficiencies(ArrayAccessor& stateArray, std::pair<int,int> st
 
 // Internal main sorting function
 bool sortArray(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<TargetState, 2>& targetGeometry, 
-    std::vector<ParallelMove>& moveList, std::shared_ptr<spdlog::logger> logger)
+    ArrayInformation& arrayInfo, std::vector<ParallelMove>& moveList, std::shared_ptr<spdlog::logger> logger)
 {
-    // Differentiate between unusable (too close to each other) and usable atoms and add into per-index buffers
-    std::optional<ArrayInformation> arrayInfo = conductInitialAnalysis(stateArray, targetGeometry, logger);
-    if(!arrayInfo.has_value())
-    {
-        return false;
-    }
-
     size_t totalUsableAtoms = 0;
-    for(auto usableAtomsAtIndex : arrayInfo.value().usableAtomsPerXCIndex)
+    for(auto usableAtomsAtIndex : arrayInfo.usableAtomsPerXCIndex)
     {
         totalUsableAtoms += usableAtomsAtIndex.size();
     }
     size_t totalTargetSites = 0;
-    for(auto targetSitesAtIndex : arrayInfo.value().targetSitesPerXCIndex)
+    for(auto targetSitesAtIndex : arrayInfo.targetSitesPerXCIndex)
     {
         totalTargetSites += targetSitesAtIndex.size();
     }
@@ -1945,7 +1930,7 @@ bool sortArray(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<
 
     // Determine were to start sorting. May either be from one side and iterate one way over the array or 
     // from the middle and outward simultaneously
-    auto startingPosition = determineBestStartPosition(stateArray, moveList, arrayInfo.value());
+    auto startingPosition = determineBestStartPosition(stateArray, moveList, arrayInfo);
     if(startingPosition.has_value())
     {
         logger->debug("Best starting position: {} - {}", std::get<0>(startingPosition.value()), std::get<1>(startingPosition.value()));
@@ -1957,20 +1942,20 @@ bool sortArray(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<
     }
 
     // Clear buffer and dumping zones
-    if(!clearBufferAndDumpingIndicesXC(stateArray, moveList, arrayInfo.value(), logger))
+    if(!clearBufferAndDumpingIndicesXC(stateArray, moveList, arrayInfo, logger))
     {
         return false;
     }
 
     // Remove atoms from starting sorting channel
     clearChannel(stateArray, std::get<0>(startingPosition.value()), std::get<1>(startingPosition.value()), 
-        false, moveList, arrayInfo.value(), logger);
+        false, moveList, arrayInfo, logger);
 
     // Call main iterating function that sorts atoms row-by-row through sorting channel
-    if(!sortRemainingRowsOrCols(stateArray, startingPosition.value(), moveList, arrayInfo.value(), logger))
+    if(!sortRemainingRowsOrCols(stateArray, startingPosition.value(), moveList, arrayInfo, logger))
     {
         // Fill remaining positions from parked atoms
-        if(!resolveSortingDeficiencies(stateArray, startingPosition.value(), moveList, arrayInfo.value(), logger))
+        if(!resolveSortingDeficiencies(stateArray, startingPosition.value(), moveList, arrayInfo, logger))
         {
             logger->error("Array could not be sorted. Aborting");
             return false;
@@ -1982,7 +1967,7 @@ bool sortArray(ArrayAccessor& stateArray, pybind11::detail::unchecked_reference<
         for(auto& move : moveList)
         {
             move.extendToUseAllTones(stateArray.rows(), stateArray.cols(), logger, false, 
-                arrayInfo.value().bufferRows, arrayInfo.value().bufferCols);
+                arrayInfo.bufferRows, arrayInfo.bufferCols);
         }
     }
 
@@ -2077,7 +2062,7 @@ bool checkMoveListValidity(ArrayAccessor& stateArray, std::vector<ParallelMove>&
 }
 
 // Access function to be bound, Eigen array act as interfaces as they can act on Python array data without reallocation
-std::optional<std::vector<ParallelMove>> sortLatticeByRowParallel(
+std::optional<std::pair<std::vector<ParallelMove>,MinimalArrayInformation>> sortLatticeByRowParallel(
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
     const py::array_t<TargetState>& targetGeometry)
 {
@@ -2132,8 +2117,16 @@ std::optional<std::vector<ParallelMove>> sortLatticeByRowParallel(
 
     // Actual sorting call
     EigenArrayAccessor eigenStateArray(stateArray);
+
+    // Differentiate between unusable (too close to each other) and usable atoms and add into per-index buffers
+    std::optional<ArrayInformation> arrayInfo = conductInitialAnalysis(eigenStateArray, targetGeometryUnchecked, logger);
+    if(!arrayInfo.has_value())
+    {
+        return std::nullopt;
+    }
+
     std::vector<ParallelMove> moveList;
-    if(!sortArray(eigenStateArray, targetGeometryUnchecked, moveList, logger))
+    if(!sortArray(eigenStateArray, targetGeometryUnchecked, arrayInfo.value(), moveList, logger))
     {
         return std::nullopt;
     }
@@ -2170,5 +2163,8 @@ std::optional<std::vector<ParallelMove>> sortLatticeByRowParallel(
         logger->info(endstrstream.str());
     }
 
-    return moveList;
+    MinimalArrayInformation minimalArrayInfo = {arrayInfo.value().bufferRows, arrayInfo.value().bufferCols, 
+        arrayInfo.value().dumpingIndicesAC, arrayInfo.value().vertical, arrayInfo.value().normalIndices};
+
+    return std::pair(moveList, std::move(minimalArrayInfo));
 }
