@@ -11,6 +11,11 @@
 #define VALUE_CLEARED_UNDESIRED_UNUSABLE 0.8
 #define VALUE_CLEARED_OUTSIDE_UNUSABLE 0.1
 
+double inline pythagorasDist(double d1, double d2)
+{
+    return sqrt(d1 * d1 + d2 * d2);
+}
+
 enum TargetState
 {
     EMPTY, OCCUPIED, IRRELEVANT
@@ -58,6 +63,8 @@ Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> generateMask(double distance, d
 Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> generatePathway(size_t borderRows, size_t borderCols, 
     const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &occupancy,
     double distFromOcc = Config::getInstance().recommendedDistFromOccSites, 
-    double distFromEmpty = Config::getInstance().recommendedDistFromEmptySites);
+    double distFromEmpty = Config::getInstance().recommendedDistFromEmptySites,
+    std::optional<size_t> minRow = std::nullopt, std::optional<size_t> maxRow = std::nullopt, 
+    std::optional<size_t> minCol = std::nullopt, std::optional<size_t> maxCol = std::nullopt);
 std::optional<ArrayInformation> conductInitialAnalysis(ArrayAccessor& stateArray, 
     pybind11::detail::unchecked_reference<TargetState, 2>& targetGeometry, std::shared_ptr<spdlog::logger> logger);

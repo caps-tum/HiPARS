@@ -22,11 +22,6 @@ struct compareOnlyTones
     }
 };
 
-double pythagorasDist(double d1, double d2)
-{
-    return sqrt(d1 * d1 + d2 * d2);
-}
-
 double moveCost(const std::vector<std::tuple<bool,size_t,int>>& path)
 {
     double cost = Config::getInstance().moveCostOffset;
@@ -60,88 +55,6 @@ double moveCost(const std::vector<std::tuple<bool,size_t,int>>& path)
     cost += costPerSubMove(std::max_element(segmentDist.begin(), segmentDist.end(), 
         [](const auto& lhs, const auto& rhs) { return lhs.second < rhs.second; })->second);
     return cost;
-}
-
-Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> generateMask(double distance, double spacingFraction)
-{
-    int maskRowDist = floor((double)distance / (Config::getInstance().rowSpacing * spacingFraction));
-    if(maskRowDist < 1)
-    {
-        maskRowDist = 0;
-    }
-    int maskRows = 2 * maskRowDist + 1;
-    int maskColDist = floor((double)distance / (Config::getInstance().columnSpacing * spacingFraction));
-    if(maskColDist < 1)
-    {
-        maskColDist = 0;
-    }
-    int maskCols = 2 * maskColDist + 1;
-    Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> mask(maskRows, maskCols);
-    
-    for(int r = 0; r < maskRows; r++)
-    {
-        for(int c = 0; c < maskCols; c++)
-        {
-            mask(r,c) = pythagorasDist((r - maskRowDist) * (Config::getInstance().rowSpacing * spacingFraction), 
-                (c - maskColDist) * (Config::getInstance().columnSpacing * spacingFraction)) < distance;
-        }
-    }
-
-    return mask;
-}
-
-Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> generatePathway(size_t borderRows, size_t borderCols, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &occupancy,
-    double distFromOcc, double distFromEmpty)
-{
-    auto occMask = generateMask(distFromOcc, 0.5);
-    Eigen::Index halfOccRows = occMask.rows() / 2;
-    Eigen::Index halfOccCols = occMask.cols() / 2;
-    auto emptyMask = generateMask(distFromEmpty, 0.5);
-    Eigen::Index halfEmptyRows = emptyMask.rows() / 2;
-    Eigen::Index halfEmptyCols = emptyMask.cols() / 2;
-
-    if(borderRows < (size_t)halfOccRows)
-    {
-        borderRows = halfOccRows;
-    }
-    if(borderRows < (size_t)halfEmptyRows)
-    {
-        borderRows = halfEmptyRows;
-    }
-    if(borderCols < (size_t)halfOccCols)
-    {
-        borderCols = halfOccCols;
-    }
-    if(borderCols < (size_t)halfEmptyCols)
-    {
-        borderCols = halfEmptyCols;
-    }
-
-    size_t pathwayRows = 2 * occupancy.rows() - 1 + 2 * borderRows;
-    size_t pathwayCols = 2 * occupancy.cols() - 1 + 2 * borderCols;
-
-    Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> pathway = 
-        Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>::Zero(pathwayRows, pathwayCols);
-
-    for(size_t r = 0; r < (size_t)occupancy.rows(); r++)
-    {
-        for(size_t c = 0; c < (size_t)occupancy.cols(); c++)
-        {
-            if(occupancy(r,c))
-            {
-                pathway(Eigen::seqN(2 * r + borderRows - halfOccRows, occMask.rows()), 
-                    Eigen::seqN(2 * c + borderCols - halfOccCols, occMask.cols())) += occMask.cast<unsigned int>();
-            }
-            else
-            {
-                pathway(Eigen::seqN(2 * r + borderRows - halfEmptyRows, emptyMask.rows()), 
-                    Eigen::seqN(2 * c + borderCols - halfEmptyCols, emptyMask.cols())) += emptyMask.cast<unsigned int>();
-            }
-        }
-    }
-
-    return pathway;
 }
 
 std::tuple<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>, unsigned int> labelPathway(
