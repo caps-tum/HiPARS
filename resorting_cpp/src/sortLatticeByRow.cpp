@@ -1054,8 +1054,8 @@ bool sortRemainingRowsOrCols(ArrayAccessor& stateArray, std::pair<int,int> start
     }
     else if(std::get<1>(startIndex) >= lastNormalIndexXCExcl)
     {
-        indexXC[0] = arrayInfo.arraySizeXC;
-        indexXC[1] = lastNormalIndexXCExcl - arrayInfo.sortingChannelWidth - 2;
+        indexXC[0] = lastNormalIndexXCExcl - arrayInfo.sortingChannelWidth - 2;
+        indexXC[1] = arrayInfo.arraySizeXC;
         currentTargetIndexXC[0] = arrayInfo.arraySizeXC;
         currentTargetIndexXC[1] = lastNormalIndexXCExcl - 1;
     }
