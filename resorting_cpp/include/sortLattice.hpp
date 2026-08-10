@@ -61,7 +61,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
 
 Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> generateMask(double distance, double spacingFraction = 1);
 Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> generatePathway(size_t borderRows, size_t borderCols, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &occupancy,
+    ArrayAccessor& occupancy,
     double distFromOcc = Config::getInstance().recommendedDistFromOccSites, 
     double distFromEmpty = Config::getInstance().recommendedDistFromEmptySites,
     std::optional<size_t> minRow = std::nullopt, std::optional<size_t> maxRow = std::nullopt, 

@@ -103,8 +103,8 @@ std::vector<std::set<std::tuple<size_t,size_t>>> findTargetSitesPerPathway(
     std::set<std::tuple<size_t,size_t>>& usableTargetSites,
     size_t borderRows, size_t borderCols, unsigned int labelCount,  size_t compZoneRowStart, size_t compZoneRowEnd,
     size_t compZoneColStart, size_t compZoneColEnd,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& stateArray,
+    const ArrayAccessor& targetGeometry,
     std::shared_ptr<spdlog::logger> logger)
 {
     auto [labelledPenalizedPathway, pLabelCount] = labelPathway(penalizedPathway);
@@ -176,7 +176,7 @@ bool isDirectMove(std::set<std::tuple<size_t,size_t>> rows, std::set<std::tuple<
 }
 
 std::optional<std::tuple<std::vector<size_t>,std::vector<size_t>,std::vector<std::tuple<bool,size_t,int>>,double>> checkMoveValidity(
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
+    const ArrayAccessor& stateArray, 
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& labelledPathway, 
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& penalizedPathway,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms,  size_t compZoneRowStart, size_t compZoneColStart, 
@@ -459,8 +459,8 @@ std::optional<std::tuple<std::vector<size_t>,std::vector<size_t>,std::vector<std
 
 std::optional<std::tuple<ParallelMove,double>> findDistOneMove(
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> penalizedPathway,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& stateArray,
+    const ArrayAccessor& targetGeometry,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms,
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
     size_t borderRows, size_t borderCols, std::shared_ptr<spdlog::logger> logger)
@@ -782,8 +782,8 @@ std::optional<std::tuple<ParallelMove,double>> findDistOneMove(
 std::optional<std::tuple<ParallelMove,double>> findComplexMove(
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> penalizedPathway, 
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& labelledPathway, unsigned int labelCount,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& stateArray,
+    const ArrayAccessor& targetGeometry,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableTargetSites,
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
     size_t borderRows, size_t borderCols, double bestIntPerCost, std::shared_ptr<spdlog::logger> logger)
@@ -1171,8 +1171,8 @@ std::optional<std::tuple<ParallelMove, double>> findPathwayMove(
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> penalizedPathway, 
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& pathway,
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& labelledPathway,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& stateArray,
+    const ArrayAccessor& targetGeometry,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableAtoms, 
     std::set<std::tuple<size_t,size_t>>& usableTargetSites,
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
@@ -1872,7 +1872,7 @@ bool handleUnusableSection(std::vector<std::tuple<bool,int>>::iterator unusableS
 }
 
 std::optional<std::tuple<std::vector<std::tuple<int,int>>, double>> analyzeLinearMovementStretch(
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& targetGeometry,
     bool vertical, int outerIndex, std::vector<std::tuple<bool,int>>& sourceAtoms, int& sectionStart, int sectionEnd, 
     size_t innerDimMax, bool sectionOverlapsCompZone,
     unsigned int blockingDist, size_t compZoneStart, size_t compZoneEnd, size_t outerCompZoneStart, 
@@ -2097,8 +2097,8 @@ std::optional<std::tuple<ParallelMove, double>> findLinearMove(
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> penalizedPathway, 
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& pathway,
     const Eigen::Ref<const Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>>& labelledPathway,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry,
+    const ArrayAccessor& stateArray,
+    const ArrayAccessor& targetGeometry,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableAtoms, 
     std::set<std::tuple<size_t,size_t>>& usableTargetSites,
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
@@ -2458,8 +2458,7 @@ bool canAtomsBeMovedSimultaneously(
     return true;
 }
 
-std::optional<std::tuple<ParallelMove,double>> removeAtomsInBorderPathway(
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
+std::optional<std::tuple<ParallelMove,double>> removeAtomsInBorderPathway(ArrayAccessor &stateArray, 
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, size_t compZoneRowStart, size_t compZoneRowEnd, 
     size_t compZoneColStart, size_t compZoneColEnd, size_t borderRows, size_t borderCols,
     std::vector<ParallelMove>& moveList, std::shared_ptr<spdlog::logger> logger)
@@ -2469,13 +2468,13 @@ std::optional<std::tuple<ParallelMove,double>> removeAtomsInBorderPathway(
 
     auto startTime = std::chrono::steady_clock::now();
     // Generate pathway only for usable atoms. Since removed atoms are discarded, we don't care about heating -> Penalized pathway
-    Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> stateArrayCopy = stateArray;
+    auto stateArrayCopy = stateArray.copy();
     for(const auto& [r, c] : unusableAtoms)
     {
-        stateArrayCopy(r,c) = false;
+        (*stateArrayCopy)(r,c) = false;
     }
 
-    auto pathway = generatePathway(borderRows, borderCols, stateArrayCopy, Config::getInstance().minDistFromOccSites, 0);
+    auto pathway = generatePathway(borderRows, borderCols, *stateArrayCopy, Config::getInstance().minDistFromOccSites, 0);
     auto [labelledPathway, labelCount] = labelPathway(pathway);
     
     // Find straight pathways to the outside. Removed atoms will be extracted through here
@@ -2886,8 +2885,8 @@ bool updateDataStructuresAfterFindingMove(
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> pathway,
     Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic>> labelledPathway, 
     unsigned int& labelCount, size_t borderRows, size_t borderCols,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, 
+    const ArrayAccessor &stateArray, 
+    const ArrayAccessor &targetGeometry, 
     const ParallelMove &move, std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableAtoms,
     std::set<std::tuple<size_t,size_t>>& usableTargetSites,
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
@@ -2970,8 +2969,8 @@ bool updateDataStructuresAfterFindingMove(
 }
 
 std::tuple<std::set<std::tuple<size_t,size_t>>,std::set<std::tuple<size_t,size_t>>,std::set<std::tuple<size_t,size_t>>> analyzeCurrentStateArray(
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, 
+    const ArrayAccessor &stateArray, 
+    const ArrayAccessor &targetGeometry, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
     std::shared_ptr<spdlog::logger> logger)
 {
@@ -3070,17 +3069,15 @@ std::tuple<std::set<std::tuple<size_t,size_t>>,std::set<std::tuple<size_t,size_t
     return std::tuple(unusableAtoms, usableNonTargetAtoms, usableTargetSites);
 }
 
-void designateUsableUndesiredAtomsAsUnusable(const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, 
+void designateUsableUndesiredAtomsAsUnusable(ArrayAccessor &stateArray, const ArrayAccessor &targetGeometry, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, std::set<std::tuple<size_t,size_t>>& unusableAtoms,
     std::shared_ptr<spdlog::logger> logger)
 {
-    auto undesiredAtoms = stateArray(Eigen::seq(compZoneRowStart, compZoneRowEnd - 1),Eigen::seq(compZoneColStart, compZoneColEnd - 1)) && !targetGeometry;
     for(Eigen::Index row = 0; row < targetGeometry.rows(); row++)
     {
         for(Eigen::Index col = 0; col < targetGeometry.cols(); col++)
         {
-            if(undesiredAtoms(row,col))
+            if(stateArray(row + compZoneRowStart, col + compZoneColStart) && !targetGeometry(row, col))
             {
                 unusableAtoms.insert(std::tuple(row + compZoneRowStart, col + compZoneColStart));
             }
@@ -3089,19 +3086,18 @@ void designateUsableUndesiredAtomsAsUnusable(const py::EigenDRef<const Eigen::Ar
 }
 
 std::vector<ParallelMove> removeAllDirectlyRemovableUnusableAtoms(
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    std::set<std::tuple<size_t,size_t>>& unusableAtoms, size_t borderRows, 
+    ArrayAccessor &stateArray, std::set<std::tuple<size_t,size_t>>& unusableAtoms, size_t borderRows, 
     size_t borderCols, std::shared_ptr<spdlog::logger> logger)
 {
     std::vector<ParallelMove> removalMoves;
 
-    Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> stateArrayCopy = stateArray;
+    auto stateArrayCopy = stateArray.copy();
     for(const auto& [r, c] : unusableAtoms)
     {
-        stateArrayCopy(r,c) = false;
+        (*stateArrayCopy)(r,c) = false;
     }
 
-    auto pathway = generatePathway(borderRows, borderCols, stateArrayCopy, Config::getInstance().minDistFromOccSites, 0);
+    auto pathway = generatePathway(borderRows, borderCols, (*stateArrayCopy), Config::getInstance().minDistFromOccSites, 0);
 
     for(bool traverseRow : {true,false})
     {
@@ -3262,8 +3258,7 @@ bool findAndExecuteMoves(Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eig
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableAtoms, std::set<std::tuple<size_t,size_t>>& usableTargetSites, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
     size_t borderRows, size_t borderCols, std::vector<ParallelMove>& moveList, 
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, std::shared_ptr<spdlog::logger> logger)
+    ArrayAccessor &stateArray, const ArrayAccessor &targetGeometry, std::shared_ptr<spdlog::logger> logger)
 {
     bool alsoRemoveUsableAtoms = false;
     unsigned int movesSinceLastDirectRemoval = 1;
@@ -3273,8 +3268,25 @@ bool findAndExecuteMoves(Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eig
         complexMoveTime = std::chrono::duration<double, std::milli>::zero(), 
         executeMoveTime = std::chrono::duration<double, std::milli>::zero(),
         linearMoveTime = std::chrono::duration<double, std::milli>::zero();
-    while((stateArray(Eigen::seq(compZoneRowStart, compZoneRowEnd - 1),Eigen::seq(compZoneColStart, compZoneColEnd - 1)) != targetGeometry).any())
+    while(true)
     {
+        bool notFullySorted = false;
+        for(size_t row = compZoneRowStart; row < compZoneRowEnd; row++)
+        {
+            for(size_t col = compZoneColStart; col < compZoneColEnd; col++)
+            {
+                if(stateArray(row, col) != targetGeometry(row - compZoneRowStart, col - compZoneColStart))
+                {
+                    notFullySorted = true;
+                }
+            }
+        }
+        if(!notFullySorted)
+        {
+            logger->info("Target geometry has been achieved");
+            break;
+        }
+
         if(CHECK_FOR_DIRECT_REMOVAL_EVERY_X_MOVES > 0 && 
             movesSinceLastDirectRemoval >= CHECK_FOR_DIRECT_REMOVAL_EVERY_X_MOVES)
         {
@@ -3289,8 +3301,7 @@ bool findAndExecuteMoves(Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eig
                 {
                     return false;
                 }
-                EigenArrayAccessor genericAccessor(stateArray);
-                if(!move.execute(genericAccessor, logger))
+                if(!move.execute(stateArray, logger))
                 {
                     return false;
                 }
@@ -3343,8 +3354,7 @@ bool findAndExecuteMoves(Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eig
             {
                 return false;
             }
-            EigenArrayAccessor genericAccessor(stateArray);
-            if(!bestMove.value().execute(genericAccessor, logger))
+            if(!bestMove.value().execute(stateArray, logger))
             {
                 return false;
             }
@@ -3376,8 +3386,7 @@ bool findAndExecuteMoves(Eigen::Ref<Eigen::Array<unsigned int,Eigen::Dynamic,Eig
     return true;
 }
 
-bool checkTargetGeometryFeasibility(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, 
-    std::shared_ptr<spdlog::logger> logger)
+bool checkTargetGeometryFeasibility(ArrayAccessor& targetGeometry, std::shared_ptr<spdlog::logger> logger)
 {
     auto usabilityPreventingNeighborhoodMask = generateMask(Config::getInstance().minDistFromOccSites);
     int usabilityPreventingNeighborhoodMaskRowDist = usabilityPreventingNeighborhoodMask.rows() / 2;
@@ -3502,7 +3511,7 @@ bool checkTargetGeometryFeasibility(py::EigenDRef<Eigen::Array<bool, Eigen::Dyna
     return true;
 }
 
-ParallelMove createRemovalMove(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
+ParallelMove createRemovalMove(ArrayAccessor& stateArray, 
     bool verticalMove, std::vector<double> unchangingIndices, std::vector<double> movedIndices, bool moveTowardsLowIndices)
 {
     ParallelMove move;
@@ -3548,7 +3557,7 @@ ParallelMove createRemovalMove(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, 
     return move;
 }
 
-bool createMinimallyInvasiveAccessPathway(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray,
+bool createMinimallyInvasiveAccessPathway(ArrayAccessor& stateArray,
     std::set<std::tuple<size_t,size_t>>& unusableAtoms, std::set<std::tuple<size_t,size_t>>& usableAtoms, 
     size_t borderRows, size_t borderCols, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd,
@@ -3844,8 +3853,7 @@ bool createMinimallyInvasiveAccessPathway(py::EigenDRef<Eigen::Array<bool, Eigen
                         auto move = createRemovalMove(stateArray, pathwayVertical, alongBorderIndices, inwardIndices, atLowIndex);
                         inwardIndices.clear();
 
-                        EigenArrayAccessor genericAccessor(stateArray);
-                        move.execute(genericAccessor, logger);
+                        move.execute(stateArray, logger);
                         moveList.push_back(std::move(move));
                     }
                 }
@@ -3856,8 +3864,7 @@ bool createMinimallyInvasiveAccessPathway(py::EigenDRef<Eigen::Array<bool, Eigen
                     alongBorderIndices.size(), inwardIndices.size());
                 auto move = createRemovalMove(stateArray, pathwayVertical, alongBorderIndices, inwardIndices, atLowIndex);
 
-                EigenArrayAccessor genericAccessor(stateArray);
-                move.execute(genericAccessor, logger);
+                move.execute(stateArray, logger);
                 moveList.push_back(std::move(move));
             }
         }
@@ -3865,10 +3872,8 @@ bool createMinimallyInvasiveAccessPathway(py::EigenDRef<Eigen::Array<bool, Eigen
     return true;
 }
 
-bool sortLatticeGreedyMain(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &stateArray, 
-    size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry, 
-    std::vector<ParallelMove>& moveList, std::shared_ptr<spdlog::logger> logger)
+bool sortLatticeGreedyMain(ArrayAccessor& stateArray, size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
+    ArrayAccessor& targetGeometry, std::vector<ParallelMove>& moveList, std::shared_ptr<spdlog::logger> logger)
 {
     size_t borderRows = Config::getInstance().recommendedDistFromOccSites / (Config::getInstance().rowSpacing / 2.) + 1;
     size_t borderCols = Config::getInstance().recommendedDistFromOccSites / (Config::getInstance().columnSpacing / 2.) + 1;
@@ -3895,8 +3900,7 @@ bool sortLatticeGreedyMain(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eige
         borderRows, borderCols, logger);
     for(const auto& move : removalMoves)
     {
-        EigenArrayAccessor genericAccessor(stateArray);
-        if(!move.execute(genericAccessor, logger))
+        if(!move.execute(stateArray, logger))
         {
             return false;
         }
@@ -4021,13 +4025,16 @@ std::optional<std::vector<ParallelMove>> sortLatticeGreedyInternal(
     }
     logger->info(strstream.str());
 
+    PyEigenArrayAccessor stateArrayAccessor(stateArray);
+    PyEigenArrayAccessor targetGeometryAccessor(targetGeometry);
+
     std::vector<ParallelMove> moveList;
-    if(!checkTargetGeometryFeasibility(targetGeometry, logger))
+    if(!checkTargetGeometryFeasibility(targetGeometryAccessor, logger))
     {
         return std::nullopt;
     }
-    if(!sortLatticeGreedyMain(stateArray, compZoneRowStart, compZoneRowEnd, 
-        compZoneColStart, compZoneColEnd, targetGeometry, moveList, logger))
+    if(!sortLatticeGreedyMain(stateArrayAccessor, compZoneRowStart, compZoneRowEnd, 
+        compZoneColStart, compZoneColEnd, targetGeometryAccessor, moveList, logger))
     {
         return std::nullopt;
     }
@@ -4105,13 +4112,16 @@ std::optional<std::vector<ParallelMove>> sortLatticeGreedyParallel(
     }
     logger->info(strstream.str());
 
+    PyEigenArrayAccessor stateArrayAccessor(stateArray);
+    PyEigenArrayAccessor targetGeometryAccessor(targetGeometry);
+
     std::vector<ParallelMove> moveList;
-    if(!checkTargetGeometryFeasibility(targetGeometry, logger))
+    if(!checkTargetGeometryFeasibility(targetGeometryAccessor, logger))
     {
         return std::nullopt;
     }
-    if(!sortLatticeGreedyMain(stateArray, compZoneRowStart, compZoneRowEnd, 
-        compZoneColStart, compZoneColEnd, targetGeometry, moveList, logger))
+    if(!sortLatticeGreedyMain(stateArrayAccessor, compZoneRowStart, compZoneRowEnd, 
+        compZoneColStart, compZoneColEnd, targetGeometryAccessor, moveList, logger))
     {
         return std::nullopt;
     }

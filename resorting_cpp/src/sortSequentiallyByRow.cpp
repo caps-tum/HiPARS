@@ -1002,7 +1002,7 @@ std::optional<std::vector<SequentialMove>> sortSequentiallyByRow(
 
     size_t compZone[4] = {compZoneRowStart, compZoneRowEnd, compZoneColStart, compZoneColEnd};
 
-    EigenArrayAccessor stateArrayAccessor(stateArray);
+    PyEigenArrayAccessor stateArrayAccessor(stateArray);
     bool success = mainSortingLoop(moves, stateArrayAccessor, compZone, logger);
 
     if(success)

@@ -1731,7 +1731,7 @@ std::optional<std::pair<std::vector<ParallelMove>,MinimalArrayInformation>> sort
     }
 
     // Actual sorting call
-    EigenArrayAccessor eigenStateArray(stateArray);
+    PyEigenArrayAccessor eigenStateArray(stateArray);
 
     // Differentiate between unusable (too close to each other) and usable atoms and add into per-index buffers
     std::optional<ArrayInformation> arrayInfo = conductInitialAnalysis(eigenStateArray, targetGeometryUnchecked, logger);

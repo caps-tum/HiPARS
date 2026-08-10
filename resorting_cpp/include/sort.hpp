@@ -2,8 +2,10 @@
 
 #include <Eigen/Dense>
 #include <vector>
+#ifndef COMPILED_AS_EXECUTABLE
 #include <pybind11/pybind11.h>
 #include "pybind11/eigen.h"
+#endif
 #include "spdlog/spdlog.h"
 #include <stdexcept>
 #include <sstream>
@@ -38,8 +40,6 @@ size_t inline roundCoordDown(double coord)
     return (size_t)(coord + 0.25);
 }
 
-namespace py = pybind11;
-
 typedef Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic> StrideDyn;
 
 class ArrayAccessor
@@ -47,10 +47,10 @@ class ArrayAccessor
 public:
     virtual std::unique_ptr<ArrayAccessor> copy() const = 0;
     virtual void operator=(const ArrayAccessor& other) = 0;
-    virtual const bool& operator()(std::size_t row, std::size_t col) const = 0;
-    virtual bool& operator()(std::size_t row, std::size_t col) = 0;
-    virtual std::size_t rows() const = 0;
-    virtual std::size_t cols() const = 0;
+    virtual const bool& operator()(size_t row, size_t col) const = 0;
+    virtual bool& operator()(size_t row, size_t col) = 0;
+    virtual size_t rows() const = 0;
+    virtual size_t cols() const = 0;
 };
 
 class RowBitMask
@@ -203,9 +203,12 @@ public:
 class EigenArrayAccessor : public ArrayAccessor
 {
 private:
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> arrayData;
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> arrayData;
+    bool *rawData;
+    size_t rowStride, colStride;
 public:
-    EigenArrayAccessor(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> array) : arrayData(array) {}
+    EigenArrayAccessor(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> array) : 
+        arrayData(array), rawData(array.data()), rowStride(array.outerStride()), colStride(array.innerStride()) {}
     std::unique_ptr<ArrayAccessor> copy() const
     {
         Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> arrayCopy = arrayData;
@@ -223,35 +226,88 @@ public:
             {
                 for(size_t c = 0; c < this->cols(); c++)
                 {
-                    this->arrayData(r,c) = other(r,c);
+                    this->rawData[r * this->rowStride + c * this->colStride] = other(r,c);
                 }
             }
         }
     }
-    const bool& operator()(std::size_t row, std::size_t col) const
+    const bool& operator()(size_t row, size_t col) const
     {
-        return this->arrayData(row,col);
+        return this->rawData[row * this->rowStride + col * this->colStride];
     }
-    bool& operator()(std::size_t row, std::size_t col)
+    bool& operator()(size_t row, size_t col)
     {
-        return this->arrayData(row,col);
+        return this->rawData[row * this->rowStride + col * this->colStride];
     }
-    std::size_t rows() const
+    size_t rows() const
     {
         return this->arrayData.rows();
     }
-    std::size_t cols() const
+    size_t cols() const
     {
         return this->arrayData.cols();
     }
 };
+
+#ifndef COMPILED_AS_EXECUTABLE
+namespace py = pybind11;
+
+class PyEigenArrayAccessor : public ArrayAccessor
+{
+private:
+    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> arrayData;
+    bool *rawData;
+    size_t rowStride, colStride;
+public:
+    PyEigenArrayAccessor(py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> array) : 
+        arrayData(array), rawData(array.data()), rowStride(array.outerStride()), colStride(array.innerStride()) {}
+    std::unique_ptr<ArrayAccessor> copy() const
+    {
+        Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> arrayCopy = arrayData;
+        return std::unique_ptr<PyEigenArrayAccessor>(new PyEigenArrayAccessor(arrayCopy));
+    }
+    void operator=(const ArrayAccessor& other)
+    {
+        if(this->rows() != other.rows() || this->cols() != other.cols())
+        {
+            throw std::invalid_argument("Array cannot be assigned due to different sizes");
+        }
+        else
+        {
+            for(size_t r = 0; r < this->rows(); r++)
+            {
+                for(size_t c = 0; c < this->cols(); c++)
+                {
+                    this->rawData[r * this->rowStride + c * this->colStride] = other(r,c);
+                }
+            }
+        }
+    }
+    const bool& operator()(size_t row, size_t col) const
+    {
+        return this->rawData[row * this->rowStride + col * this->colStride];
+    }
+    bool& operator()(size_t row, size_t col)
+    {
+        return this->rawData[row * this->rowStride + col * this->colStride];
+    }
+    size_t rows() const
+    {
+        return this->arrayData.rows();
+    }
+    size_t cols() const
+    {
+        return this->arrayData.cols();
+    }
+};
+#endif
 
 class CStyle2DArrayAccessor : public ArrayAccessor
 {
 private:
     const bool dataOwned;
     bool **arrayData;
-    std::size_t rowCount, colCount;
+    size_t rowCount, colCount;
     CStyle2DArrayAccessor(const CStyle2DArrayAccessor& other) : dataOwned(true), arrayData(nullptr), 
         rowCount(other.rowCount), colCount(other.colCount)
     {
@@ -262,7 +318,7 @@ private:
         }
     }
 public:
-    CStyle2DArrayAccessor(bool **array, std::size_t rows, std::size_t cols) : dataOwned(false), 
+    CStyle2DArrayAccessor(bool **array, size_t rows, size_t cols) : dataOwned(false), 
         arrayData(array), rowCount(rows), colCount(cols) {}
     std::unique_ptr<ArrayAccessor> copy() const
     {
@@ -297,19 +353,19 @@ public:
             }
         }
     }
-    const bool& operator()(std::size_t row, std::size_t col) const
+    const bool& operator()(size_t row, size_t col) const
     {
         return this->arrayData[row][col];
     }
-    bool& operator()(std::size_t row, std::size_t col)
+    bool& operator()(size_t row, size_t col)
     {
         return this->arrayData[row][col];
     }
-    std::size_t rows() const
+    size_t rows() const
     {
         return this->rowCount;
     }
-    std::size_t cols() const
+    size_t cols() const
     {
         return this->colCount;
     }
@@ -320,13 +376,13 @@ class CStyle1DArrayAccessor : public ArrayAccessor
 private:
     const bool dataOwned;
     bool *arrayData;
-    std::size_t rowCount, colCount;
+    size_t rowCount, colCount;
     CStyle1DArrayAccessor(const CStyle1DArrayAccessor& other) : dataOwned(true), arrayData(nullptr), rowCount(other.rowCount), colCount(other.colCount)
     {
         arrayData = new bool[rowCount * colCount];
     }
 public:
-    CStyle1DArrayAccessor(bool *array, std::size_t rows, std::size_t cols) : dataOwned(false), arrayData(array), rowCount(rows), colCount(cols) {}
+    CStyle1DArrayAccessor(bool *array, size_t rows, size_t cols) : dataOwned(false), arrayData(array), rowCount(rows), colCount(cols) {}
     std::unique_ptr<ArrayAccessor> copy() const
     {
         CStyle1DArrayAccessor *accessorCopy = new CStyle1DArrayAccessor(*this);
@@ -356,19 +412,19 @@ public:
             }
         }
     }
-    const bool& operator()(std::size_t row, std::size_t col) const
+    const bool& operator()(size_t row, size_t col) const
     {
         return this->arrayData[row * this->colCount + col];
     }
-    bool& operator()(std::size_t row, std::size_t col)
+    bool& operator()(size_t row, size_t col)
     {
         return this->arrayData[row * this->colCount + col];
     }
-    std::size_t rows() const
+    size_t rows() const
     {
         return this->rowCount;
     }
-    std::size_t cols() const
+    size_t cols() const
     {
         return this->colCount;
     }

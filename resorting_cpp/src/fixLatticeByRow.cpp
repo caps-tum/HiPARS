@@ -456,7 +456,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
         return std::nullopt;
     }
 
-    EigenArrayAccessor stateArrayAccessor(stateArray);
+    PyEigenArrayAccessor stateArrayAccessor(stateArray);
 
     std::vector<ParallelMove> moveList;
 
@@ -473,7 +473,7 @@ std::optional<std::vector<ParallelMove>> fixLatticeByRowSortingDeficiencies(
     size_t borderRows = Config::getInstance().minDistFromOccSites / (Config::getInstance().rowSpacing / 2);
     size_t borderCols = Config::getInstance().minDistFromOccSites / (Config::getInstance().columnSpacing / 2);
     Eigen::Array<int,Eigen::Dynamic,Eigen::Dynamic> pathway = 
-        generatePathway(borderRows, borderCols, stateArray, Config::getInstance().minDistFromOccSites, 0,
+        generatePathway(borderRows, borderCols, stateArrayAccessor, Config::getInstance().minDistFromOccSites, 0,
             arrayInfo.normalIndices.firstRowOrXC, arrayInfo.normalIndices.lastRowOrXCExcl,
             arrayInfo.normalIndices.firstColOrAC, arrayInfo.normalIndices.lastColOrACExcl).cast<int>();
     auto distancePathway = Eigen::Array<unsigned int, Eigen::Dynamic, Eigen::Dynamic>(pathway.rows(), pathway.cols());

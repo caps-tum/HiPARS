@@ -30,13 +30,19 @@ public:
         ArrayAccessor& stateArray, ParallelMove::Step start, ParallelMove::Step end, std::shared_ptr<spdlog::logger> logger);
     double cost() const;
     bool execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::logger> logger,
-        std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved = std::nullopt, 
+        std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved = std::nullopt, 
         double minDist = DOUBLE_EQUIVALENCE_THRESHOLD) const;
     bool extendToUseAllTones(unsigned int stateArrayRows, unsigned int stateArrayCols, std::shared_ptr<spdlog::logger> logger, bool considerSpacing,
         std::optional<std::vector<int>> bufferRows = std::nullopt, std::optional<std::vector<int>> bufferCols = std::nullopt);
 };
 
+#ifndef COMPILED_AS_EXECUTABLE
 std::optional<std::vector<ParallelMove>> sortParallel(
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& stateArray, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
     py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry);
+#endif
+std::optional<std::vector<ParallelMove>> sortParallelCpp(
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> stateArray, 
+    size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> targetGeometry);

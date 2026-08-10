@@ -58,7 +58,7 @@ void moveMoveToSortedMoveListIfUseful(std::vector<std::tuple<ParallelMove,int,do
 
 std::optional<int> calcCorrectedTargetSite(const ParallelMove& move, ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     int correctedTargetSites = 0;
@@ -406,16 +406,12 @@ double approxCostPerMove(double dist1, double dist2)
     }
 }
 
-bool fillSteps(ArrayAccessor& stateArray, 
-    ParallelMove::Step& start, ParallelMove::Step& end, ParallelMove::Step& step1, ParallelMove::Step& step2, 
+bool isDirectMove(ArrayAccessor& stateArray, const ParallelMove::Step& start, const ParallelMove::Step& end, 
     bool rowFirst, double& maxDist, std::shared_ptr<spdlog::logger> logger)
 {
-    bool completelyDirectMove = true;
-    std::vector<double> *step1Selection, *step2Selection, *selStart, *selEnd, *otherStart, *otherEnd;
+    const std::vector<double> *selStart, *selEnd, *otherStart, *otherEnd;
     if(rowFirst)
     {
-        step1Selection = &step1.rowSelection;
-        step2Selection = &step2.rowSelection;
         selStart = &start.rowSelection;
         selEnd = &end.rowSelection;
         otherStart = &start.colSelection;
@@ -423,40 +419,38 @@ bool fillSteps(ArrayAccessor& stateArray,
     }
     else
     {
-        step1Selection = &step1.colSelection;
-        step2Selection = &step2.colSelection;
         selStart = &start.colSelection;
         selEnd = &end.colSelection;
         otherStart = &start.rowSelection;
         otherEnd = &end.rowSelection;
     }
+    bool completelyDirectMove = true;
     for(size_t i = 0; i < selStart->size(); i++)
     {
-        double startRow = (*selStart)[i];
-        double endRow = (*selEnd)[i];
-        if(endRow > startRow + DOUBLE_EQUIVALENCE_THRESHOLD)
+        double dist = abs((*selStart)[i] - (*selEnd)[i]);
+        if(dist > DOUBLE_EQUIVALENCE_THRESHOLD)
         {
-            completelyDirectMove = false;
-            (*step1Selection)[i] += 0.5;
-            (*step2Selection)[i] -= 0.5;
-        }
-        else if(endRow < startRow - DOUBLE_EQUIVALENCE_THRESHOLD)
-        {
-            completelyDirectMove = false;
-            (*step1Selection)[i] -= 0.5;
-            (*step2Selection)[i] += 0.5;
-        }
-        else
-        {
-            bool directMove = true;
-
-            for(size_t j = 0; j < otherStart->size() && directMove; j++)
+            if(dist > maxDist)
             {
-                size_t row = roundCoordDown(startRow);
-                double col = (*otherStart)[j];
-
-                double endCol = (*otherEnd)[j];
-                int colStep = abs(endCol - col) > DOUBLE_EQUIVALENCE_THRESHOLD ? (signbit(endCol - col) ? -1 : 1) : 0;
+                maxDist = dist;
+            }
+            completelyDirectMove = false;
+        }
+    }
+    if(!completelyDirectMove)
+    {
+        return false;
+    }
+    for(size_t i = 0; i < selStart->size(); i++)
+    {
+        for(size_t j = 0; j < otherStart->size(); j++)
+        {
+            size_t row = roundCoordDown((*selStart)[i]);
+            double col = (*otherStart)[j];
+            double endCol = (*otherEnd)[j];
+            if(abs(endCol - col) > DOUBLE_EQUIVALENCE_THRESHOLD)
+            {
+                int colStep = endCol < col ? -1 : 1;
                 col += colStep;
 
                 // If either has at least one more step to go (the other will be zero)
@@ -465,99 +459,148 @@ bool fillSteps(ArrayAccessor& stateArray,
                     if(accessArrayDim(stateArray, row, roundCoordDown(col), rowFirst) && 
                         !orderedDblVecContainsElem(*otherStart, col))
                     {
-                        directMove = false;
-                        break;
+                        return false;
                     }
                 }
             }
-            if(!directMove)
-            {
-                completelyDirectMove = false;
-                (*step1Selection)[i] += 0.5;
-                (*step2Selection)[i] += 0.5;
-            }
-        }
-        double dist = abs(endRow - startRow);
-        if(dist > maxDist)
-        {
-            maxDist = dist;
         }
     }
-    return completelyDirectMove;
+    return true;
+}
+
+void fillSteps(ArrayAccessor& stateArray, ParallelMove& move, 
+    int maxRowDist, int maxColDist, std::shared_ptr<spdlog::logger> logger)
+{
+    for(size_t step = 1; step < move.steps.size() - 1; step++)
+    {
+        move.steps[step].rowSelection.resize(move.steps[0].rowSelection.size());
+        move.steps[step].colSelection.resize(move.steps[0].colSelection.size());
+    }
+
+    for(size_t i = 0; i < move.steps[0].rowSelection.size(); i++)
+    {
+        double startRow = move.steps[0].rowSelection[i];
+        double endRow = move.steps.back().rowSelection[i];
+        if(endRow > startRow + DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].rowSelection[i] = startRow + 0.5;
+            move.steps[move.steps.size() - 2].rowSelection[i] = endRow - 0.5;
+        }
+        else if(endRow < startRow - DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].rowSelection[i] = startRow - 0.5;
+            move.steps[move.steps.size() - 2].rowSelection[i] = endRow + 0.5;
+        }
+        else if(maxColDist <= 1 + DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].rowSelection[i] = startRow;
+            move.steps[move.steps.size() - 2].rowSelection[i] = startRow;
+        }
+        else
+        {
+            move.steps[1].rowSelection[i] = startRow + 0.5;
+            move.steps[move.steps.size() - 2].rowSelection[i] = startRow + 0.5;
+        }
+        if(move.steps.size() == 5)
+        {
+            move.steps[2].rowSelection[i] = move.steps[1].rowSelection[i];
+        }
+    }
+    for(size_t i = 0; i < move.steps[0].colSelection.size(); i++)
+    {
+        double startCol = move.steps[0].colSelection[i];
+        double endCol = move.steps.back().colSelection[i];
+        if(endCol > startCol + DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].colSelection[i] = startCol + 0.5;
+            move.steps[move.steps.size() - 2].colSelection[i] = endCol - 0.5;
+        }
+        else if(endCol < startCol - DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].colSelection[i] = startCol - 0.5;
+            move.steps[move.steps.size() - 2].colSelection[i] = endCol + 0.5;
+        }
+        else if(maxColDist <= 1 + DOUBLE_EQUIVALENCE_THRESHOLD)
+        {
+            move.steps[1].colSelection[i] = startCol;
+            move.steps[move.steps.size() - 2].colSelection[i] = startCol;
+        }
+        else
+        {
+            move.steps[1].colSelection[i] = startCol + 0.5;
+            move.steps[move.steps.size() - 2].colSelection[i] = startCol + 0.5;
+        }
+        if(move.steps.size() == 5)
+        {
+            move.steps[2].colSelection[i] = move.steps[3].colSelection[i];
+        }
+    }
+    if(!Config::getInstance().allowDiagonalMovement)
+    {
+        if(move.steps.size() == 5 || maxColDist > maxRowDist)
+        {
+            for(size_t i = 0; i < move.steps[0].colSelection.size(); i++)
+            {
+                move.steps[1].colSelection[i] = move.steps[0].colSelection[i];
+            }
+            for(size_t i = 0; i < move.steps.back().rowSelection.size(); i++)
+            {
+                move.steps[move.steps.size() - 2].rowSelection[i] = move.steps.back().rowSelection[i];
+            }
+        }
+        else
+        {
+            for(size_t i = 0; i < move.steps[0].rowSelection.size(); i++)
+            {
+                move.steps[1].rowSelection[i] = move.steps[0].rowSelection[i];
+            }
+            for(size_t i = 0; i < move.steps.back().colSelection.size(); i++)
+            {
+                move.steps[move.steps.size() - 2].colSelection[i] = move.steps.back().colSelection[i];
+            }
+        }
+    }
 }
 
 ParallelMove ParallelMove::fromStartAndEnd(
     ArrayAccessor& stateArray, ParallelMove::Step start, ParallelMove::Step end, std::shared_ptr<spdlog::logger> logger)
 {
     ParallelMove move;
-    ParallelMove::Step step1;
-    ParallelMove::Step step2;
-
-    step1.rowSelection = start.rowSelection;
-    step1.colSelection = start.colSelection;
-    step2.rowSelection = end.rowSelection;
-    step2.colSelection = end.colSelection;
 
     double maxRowDist = 0;
     double maxColDist = 0;
 
-    bool completelyDirectMove = fillSteps(stateArray, start, end, step1, step2, true, maxRowDist, logger);
+    bool completelyDirectMove = isDirectMove(stateArray, start, end, true, maxRowDist, logger);
     if(!completelyDirectMove)
     {
-        completelyDirectMove = fillSteps(stateArray, start, end, step1, step2, false, maxColDist, logger);
+        completelyDirectMove = isDirectMove(stateArray, start, end, false, maxColDist, logger);
     }
        
-    move.steps.push_back(start);
+    // If no distance is greater than 1, then the move is direct and can be executed in one step as long as diagonal movement is allowed. 
+    // If diagonal movement is not allowed, then more moves are required.
     if(!completelyDirectMove && (!Config::getInstance().allowDiagonalMovement ||
-        (maxRowDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD || maxColDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD)))
+        maxRowDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD || maxColDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD))
     {
+        // If both distances are greater than 1, then the move can be executed in four steps. Otherwise, it can be executed in three steps.
         bool require4Steps = maxRowDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD && maxColDist > 1 + DOUBLE_EQUIVALENCE_THRESHOLD;
-        if(!Config::getInstance().allowDiagonalMovement)
-        {
-            if(maxRowDist > maxColDist)
-            {
-                step1.rowSelection = start.rowSelection;
-                if(require4Steps)
-                {
-                    step2.colSelection = end.colSelection;
-                }
-                else
-                {
-                    step2.rowSelection = end.rowSelection;
-                }
-            }
-            else
-            {
-                step1.colSelection = start.colSelection;
-                if(require4Steps)
-                {
-                    step2.rowSelection = end.rowSelection;
-                }
-                else
-                {
-                    step2.colSelection = end.colSelection;
-                }
-            }
-        }
-        move.steps.push_back(step1);
         if(require4Steps)
         {
-            ParallelMove::Step intermediateStep;
-            if(maxRowDist > maxColDist)
-            {
-                intermediateStep.rowSelection = step2.rowSelection;
-                intermediateStep.colSelection = step1.colSelection;
-            }
-            else
-            {
-                intermediateStep.rowSelection = step1.rowSelection;
-                intermediateStep.colSelection = step2.colSelection;
-            }
-            move.steps.push_back(std::move(intermediateStep));
+            move.steps.resize(5);
         }
-        move.steps.push_back(std::move(step2));
+        else
+        {
+            move.steps.resize(4);
+        }
+        move.steps[0] = std::move(start);
+        move.steps.back() = std::move(end);
+        fillSteps(stateArray, move, maxRowDist, maxColDist, logger);
     }
-    move.steps.push_back(end);
+    else
+    {
+        move.steps.resize(2);
+        move.steps[0] = std::move(start);
+        move.steps[1] = std::move(end);
+    }
     return move;
 }
 
@@ -604,8 +647,13 @@ double ParallelMove::cost() const
 }
 
 bool ParallelMove::execute(ArrayAccessor& stateArray, std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, double minDist) const
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, double minDist) const
 {
+    if(this->steps.empty())
+    {
+        logger->error("Move has no steps!");
+        return false;
+    }
     const auto& firstStep = this->steps.front();
     const auto& lastStep = this->steps.back();
 
@@ -857,7 +905,7 @@ bool ParallelMove::extendToUseAllTones(unsigned int stateArrayRows, unsigned int
 std::tuple<std::optional<ParallelMove>,int,double> improveMoveByAddingIndependentAtom(
     ArrayAccessor& stateArray, size_t compZone[4], std::shared_ptr<spdlog::logger> logger, ParallelMove move, 
     double cost, unsigned int correctedTargetSites,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     unsigned int aodRowLimit = Config::getInstance().aodRowLimit;
@@ -869,6 +917,11 @@ std::tuple<std::optional<ParallelMove>,int,double> improveMoveByAddingIndependen
         !Config::getInstance().allowMovesBetweenCols || !Config::getInstance().allowMovesBetweenRows)
     {
         logger->info("Move limitations prevent method for improving move by adding independent atoms");
+        return std::tuple(std::nullopt, 0, DBL_MAX);
+    }
+    if(move.steps.size() < 2)
+    {
+        logger->info("Move has less than 2 steps so cannot be improved by adding independent atoms");
         return std::tuple(std::nullopt, 0, DBL_MAX);
     }
 
@@ -1091,7 +1144,7 @@ std::tuple<std::optional<ParallelMove>,int,double> improveMoveByAddingIndependen
 std::tuple<std::optional<ParallelMove>,int,double> improveComplexMove(
     ArrayAccessor& stateArray, size_t compZone[4], std::shared_ptr<spdlog::logger> logger, ParallelMove move, 
     double cost, unsigned int correctedTargetSites,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     unsigned int aodRowLimit = Config::getInstance().aodRowLimit;
@@ -1103,6 +1156,11 @@ std::tuple<std::optional<ParallelMove>,int,double> improveComplexMove(
     if(aodColLimit <= 1 || aodRowLimit <= 1 || !Config::getInstance().allowMovesBetweenCols || !Config::getInstance().allowMovesBetweenRows)
     {
         logger->info("Move limitations prevent method for improving complex row and col move");
+        return std::tuple(std::nullopt, 0, DBL_MAX);
+    }
+    if(move.steps.size() < 2)
+    {
+        logger->info("Move to optimize is not complex enough to be improved by this method");
         return std::tuple(std::nullopt, 0, DBL_MAX);
     }
 
@@ -1563,7 +1621,7 @@ std::optional<ParallelMove> constructMoveWithSeveralRowsAndCols(ArrayAccessor& s
 
 std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     unsigned int aodTotalLimit = Config::getInstance().aodTotalLimit;
@@ -1966,7 +2024,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
 
 std::vector<std::tuple<ParallelMove,int,double>> removeUnwantedAtoms(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
@@ -2154,7 +2212,7 @@ std::vector<std::tuple<ParallelMove,int,double>> removeUnwantedAtoms(ArrayAccess
 
 std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
@@ -2375,7 +2433,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
 
 std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>>, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>>, 
     ArrayAccessor& targetGeometry)
 {
     unsigned int aodTotalLimit = Config::getInstance().aodTotalLimit;
@@ -2653,7 +2711,7 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
 
 std::vector<std::tuple<ParallelMove,int,double>> fillRowSidesDirectly(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
     ArrayAccessor& targetGeometry)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
@@ -2980,7 +3038,7 @@ bool analyzeArray(ArrayAccessor& stateArray, size_t compZone[4], int& incorrectT
 
 bool findNextMove(ArrayAccessor& stateArray, size_t compZone[4], std::vector<ParallelMove>& moves, 
     bool& sorted, int& incorrectTargetSites, ArrayAccessor& targetGeometry, std::shared_ptr<spdlog::logger> logger,
-    std::optional<py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved,
+    std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved,
     std::vector<std::chrono::nanoseconds>& timePerMoveFunction)
 {
     logger->debug("Finding next best move");
@@ -3193,10 +3251,10 @@ std::optional<std::vector<ParallelMove>> sortParallelInternal(
     return moves;
 }
 
-std::optional<std::vector<ParallelMove>> sortParallel(
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& stateArray, 
+std::optional<std::vector<ParallelMove>> sortParallelCpp(
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> stateArray, 
     size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
-    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry)
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> targetGeometry)
 {
     std::shared_ptr<spdlog::logger> logger = Config::getInstance().getParallelLogger();
     omp_set_num_threads(NUM_THREADS);
@@ -3206,3 +3264,19 @@ std::optional<std::vector<ParallelMove>> sortParallel(
     return sortParallelInternal(stateArrayAccessor, compZoneRowStart, 
         compZoneRowEnd, compZoneColStart, compZoneColEnd, targetGeometryArrayAccessor, logger);
 }
+
+#ifndef COMPILED_AS_EXECUTABLE
+std::optional<std::vector<ParallelMove>> sortParallel(
+    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>& stateArray, 
+    size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
+    py::EigenDRef<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &targetGeometry)
+{
+    std::shared_ptr<spdlog::logger> logger = Config::getInstance().getParallelLogger();
+    omp_set_num_threads(NUM_THREADS);
+
+    PyEigenArrayAccessor stateArrayAccessor(stateArray);
+    PyEigenArrayAccessor targetGeometryArrayAccessor(targetGeometry);
+    return sortParallelInternal(stateArrayAccessor, compZoneRowStart, 
+        compZoneRowEnd, compZoneColStart, compZoneColEnd, targetGeometryArrayAccessor, logger);
+}
+#endif

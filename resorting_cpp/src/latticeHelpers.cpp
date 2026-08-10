@@ -29,8 +29,7 @@ Eigen::Array<bool,Eigen::Dynamic,Eigen::Dynamic> generateMask(double distance, d
 }
 
 Eigen::Array<unsigned int,Eigen::Dynamic,Eigen::Dynamic> generatePathway(size_t borderRows, size_t borderCols, 
-    const py::EigenDRef<const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> &occupancy,
-    double distFromOcc, double distFromEmpty, 
+    ArrayAccessor& occupancy, double distFromOcc, double distFromEmpty, 
     std::optional<size_t> minRow, std::optional<size_t> maxRow, std::optional<size_t> minCol, std::optional<size_t> maxCol)
 {
     auto occMask = generateMask(distFromOcc, 0.5);
