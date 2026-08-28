@@ -12,11 +12,11 @@
 #include "config.hpp"
 
 void moveMoveToSortedMoveListIfUseful(std::vector<std::tuple<ParallelMove,int,double>>& moveList, std::vector<size_t>& moveRanking, 
-    ParallelMove& move, int correctedTargetSites, double costPerCorrectedTargetSite)
+    ParallelMove& move, int correctedTargetSites, double costPerCorrectedTargetSite, double benefitFractionToAlsoExecute)
 {
     if(!moveList.empty() && !moveRanking.empty())
     {
-        if(costPerCorrectedTargetSite <= std::get<2>(moveList[moveRanking[0]]) / BENEFIT_FRACTION_TO_ALSO_EXECUTE)
+        if(costPerCorrectedTargetSite <= std::get<2>(moveList[moveRanking[0]]) / benefitFractionToAlsoExecute)
         {
             size_t insertPosition = moveRanking.size();
             for(size_t nthBestMove = 0; nthBestMove < moveRanking.size(); nthBestMove++)
@@ -30,7 +30,7 @@ void moveMoveToSortedMoveListIfUseful(std::vector<std::tuple<ParallelMove,int,do
             double bestCostPerCorrectedTargetSite = insertPosition == 0 ? costPerCorrectedTargetSite : 
                 std::get<2>(moveList[moveRanking[0]]);
             if(insertPosition < moveRanking.size() && std::get<2>(moveList[moveRanking.back()]) > 
-                bestCostPerCorrectedTargetSite / BENEFIT_FRACTION_TO_ALSO_EXECUTE)
+                bestCostPerCorrectedTargetSite / benefitFractionToAlsoExecute)
             {
                 // Previously worst is removed as it is not good enough
                 moveList[moveRanking.back()] = std::tuple(std::move(move), correctedTargetSites, costPerCorrectedTargetSite);
@@ -1443,10 +1443,10 @@ std::tuple<std::optional<ParallelMove>,int,double> improveComplexMove(
     return std::tuple(std::move(improvedMove), correctedTargetSites, bestCostPerCorrectedTargetSite);
 }
 
-std::pair<std::vector<RowBitMask>, unsigned int> determineWhichRowsToUse(
-    std::map<unsigned int,std::vector<RowBitMask>>& rowBitMasks, unsigned int targetIterCount, size_t lastConsideredIndexExclusive)
+std::pair<std::vector<const RowBitMask*>, unsigned int> determineWhichRowsToUse(
+    std::map<unsigned int,std::vector<RowBitMask>>& rowBitMasks, unsigned int targetIterCount, size_t lastConsideredIndexExclusive, double cutoffOverlapFraction)
 {
-    std::vector<RowBitMask> usedRows;
+    std::vector<const RowBitMask*> usedRows;
     if(rowBitMasks.size() == 0)
     {
         return std::pair(usedRows, 0);
@@ -1455,16 +1455,15 @@ std::pair<std::vector<RowBitMask>, unsigned int> determineWhichRowsToUse(
     // Skew towards earlier by giving 150% to the first and 50% to the last and interpolating linearly inbetween
     unsigned int usedIterCount = 0;
 
-    unsigned int cutoffOverlap = rowBitMasks.rbegin()->first * CUTOFF_OVERLAP_FRACTION;
+    unsigned int cutoffOverlap = rowBitMasks.rbegin()->first * cutoffOverlapFraction;
     for(auto reverseIterator = rowBitMasks.rbegin(); reverseIterator != rowBitMasks.rend() && usedIterCount < targetIterCount; 
         reverseIterator++)
     {
-        auto& [overlap, rows] = *reverseIterator;
-        if(overlap < cutoffOverlap)
+        if(reverseIterator->first < cutoffOverlap)
         {
             return std::pair(usedRows, usedIterCount);
         }
-        for(auto& row : rows)
+        for(const auto& row : reverseIterator->second)
         {
             int requiredIterations = (int)lastConsideredIndexExclusive - (int)row.indices.back() - 1;
             if(requiredIterations > 0)
@@ -1476,7 +1475,7 @@ std::pair<std::vector<RowBitMask>, unsigned int> determineWhichRowsToUse(
                 else
                 {
                     usedIterCount += requiredIterations;
-                    usedRows.push_back(std::move(row));
+                    usedRows.push_back(&row);
                 }
             }
         }
@@ -1622,7 +1621,7 @@ std::optional<ParallelMove> constructMoveWithSeveralRowsAndCols(ArrayAccessor& s
 std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
     std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
-    ArrayAccessor& targetGeometry)
+    ArrayAccessor& targetGeometry, double benefitFractionToAlsoExecute)
 {
     unsigned int aodTotalLimit = Config::getInstance().aodTotalLimit;
 
@@ -1641,6 +1640,19 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
     RowBitMask bestStart, bestEnd;
     bool bestRowFirst = false;
     unsigned int bestColLimit;
+
+    int maxMultiIterCount = stateArray.rows() * stateArray.cols();
+    size_t maxInvestigatedOverlapSections = 10;
+    double cutoffOverlapThreshold = 0.7;
+    if(Config::getInstance().runTimeFocus.has_value())
+    {
+        int runTimeFocus = Config::getInstance().runTimeFocus.value();
+        maxInvestigatedOverlapSections = (11 - runTimeFocus) * 2;
+        maxMultiIterCount *= (double)(11 - runTimeFocus) / 5.;
+        cutoffOverlapThreshold = 0.5 + ((double)runTimeFocus) / 20.;
+    }
+    const RowBitMask **outerRowsToInvestigate = new (std::nothrow) const RowBitMask *[maxInvestigatedOverlapSections];
+    const RowBitMask **innerRowsToInvestigate = new (std::nothrow) const RowBitMask *[maxInvestigatedOverlapSections];
 
     for(bool rowFirst : {true, false})
     {
@@ -1691,109 +1703,142 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
             }
         }
 
-        // Calculate maximum target sizes
+        // Maps to switch back and forth between iterations to avoid copying
         std::map<unsigned int,std::vector<RowBitMask>> bitMaskInnerVec2;
-        std::map<unsigned int,std::vector<RowBitMask>> *prevBitMasksPerInnerRowSet = &bitMaskInnerVec2;
-        std::map<unsigned int,std::vector<RowBitMask>> *bitMasksPerInnerRowSet = &bitMaskInnerVec1;
-
-        // Calculate maximum sizes for border
         std::map<unsigned int,std::vector<RowBitMask>> bitMaskOuterVec2;
-        std::map<unsigned int,std::vector<RowBitMask>> *prevBitMasksPerOuterRowSet = &bitMaskOuterVec2;
-        std::map<unsigned int,std::vector<RowBitMask>> *bitMasksPerOuterRowSet = &bitMaskOuterVec1;
 
         unsigned int iterCount = 0;
-        std::vector<RowBitMask> rowsToUseInner, rowsToUseOuter;
+        std::vector<const RowBitMask*> rowsToUseInner, rowsToUseOuter;
 
         // If both row and column distance is larger than 1, then 4 submoves are required
         double approxBaselineCost = Config::getInstance().moveCostOffset + 4 * Config::getInstance().moveCostOffsetSubmove;
             
-        std::vector<const RowBitMask*> outerRowsToInvestigate, innerRowsToInvestigate;
-        unsigned int targetIterCount = MAX_MULTI_ITER_COUNT;
+        unsigned int targetIterCount = maxMultiIterCount;
         unsigned int maxCols = colAODLimit;
         
         unsigned int approxOuterMaxOverlap = 2, approxInnerMaxOverlap = 2;
 
-        #pragma omp parallel
+        const int nthreads = omp_get_max_threads();
+        std::vector<std::map<unsigned int,std::vector<RowBitMask>>> localInner(nthreads), localOuter(nthreads);
+
+        #pragma omp parallel shared(localInner, localOuter)
         {
+            // Pointers to switch between iterations to avoid copying
+            std::map<unsigned int,std::vector<RowBitMask>> *prevBitMasksPerInnerRowSet = &bitMaskInnerVec2;
+            std::map<unsigned int,std::vector<RowBitMask>> *bitMasksPerInnerRowSet = &bitMaskInnerVec1;
+            std::map<unsigned int,std::vector<RowBitMask>> *prevBitMasksPerOuterRowSet = &bitMaskOuterVec2;
+            std::map<unsigned int,std::vector<RowBitMask>> *bitMasksPerOuterRowSet = &bitMaskOuterVec1;
+
             for(unsigned int rowCount = 2; rowCount <= maxRows && !bitMasksPerInnerRowSet->empty() && 
                 !bitMasksPerOuterRowSet->empty(); rowCount++)
             {
                 if(rowCount > 2)
                 {
                     // Take remaining iterations and use 1-3 times as many as the average allows (more at beginning)
-                    targetIterCount = (MAX_MULTI_ITER_COUNT - iterCount) / (maxRows - rowCount + 1) / 2 * 
+                    targetIterCount = (maxMultiIterCount - iterCount) / (maxRows - rowCount + 1) / 2 * 
                         (1 + (maxRows - rowCount) / (maxRows - 2) * 2);
                 }
                 if(aodTotalLimit / rowCount < maxCols)
                 {
                     maxCols = aodTotalLimit / rowCount;
                 }
-                std::map<unsigned int,std::vector<RowBitMask>> localInner, localOuter;
                 unsigned int maxLocalInner = 2, maxLocalOuter = 2;
 
-                // Prepare list of index combinations to investigate
-                #pragma omp barrier
-                #pragma omp single nowait
-                {
-                    approxOuterMaxOverlap = 2;
-                    auto *tmpRef = prevBitMasksPerInnerRowSet;
-                    prevBitMasksPerInnerRowSet = bitMasksPerInnerRowSet;
-                    bitMasksPerInnerRowSet = tmpRef;
-                    bitMasksPerInnerRowSet->clear();
+                // Switch pointers to avoid copying
+                auto *tmpRef = prevBitMasksPerInnerRowSet;
+                prevBitMasksPerInnerRowSet = bitMasksPerInnerRowSet;
+                bitMasksPerInnerRowSet = tmpRef;
 
-                    unsigned int usedIterations;
-                    std::tie(rowsToUseInner, usedIterations) = determineWhichRowsToUse(
-                        *prevBitMasksPerInnerRowSet, targetIterCount, rowDimCompZone[1]);
-                    logger->debug("Investigating {} rows for inner section at count {}", rowsToUseInner.size(), rowCount);
-                    iterCount += usedIterations;
-                }
+                tmpRef = prevBitMasksPerOuterRowSet;
+                prevBitMasksPerOuterRowSet = bitMasksPerOuterRowSet;
+                bitMasksPerOuterRowSet = tmpRef;
+
+                // Prepare list of index combinations to investigate
                 #pragma omp single
                 {
-                    approxInnerMaxOverlap = 2;
-                    auto *tmpRef = prevBitMasksPerOuterRowSet;
-                    prevBitMasksPerOuterRowSet = bitMasksPerOuterRowSet;
-                    bitMasksPerOuterRowSet = tmpRef;
-                    bitMasksPerOuterRowSet->clear();
-                    if(!prevBitMasksPerInnerRowSet->empty())
+                    #pragma omp task
                     {
-                        logger->debug("Max empty columns for {} rows: {}", rowCount - 1, prevBitMasksPerInnerRowSet->rbegin()->first);
-                    }
-
-                    unsigned int usedIterations;
-                    std::tie(rowsToUseOuter, usedIterations) = determineWhichRowsToUse(
-                        *prevBitMasksPerOuterRowSet, targetIterCount, rows);
-                    logger->debug("Investigating {} rows for outer section at count {}", rowsToUseOuter.size(), rowCount);
-                    iterCount += usedIterations;
-                }
-                // Investigate index sets by adding additional indices
-                #pragma omp for nowait schedule(dynamic, 4)
-                for(const auto& prevBitMask : rowsToUseInner)
-                {
-                    for(size_t i = prevBitMask.indices.back() + 1; i < rowDimCompZone[1]; i++)
-                    {
-                        RowBitMask combBitMask = RowBitMask::fromAnd(prevBitMask, bitMaskByInnerRow[i - rowDimCompZone[0]]);
-                        unsigned int overlap = combBitMask.bitsSet();
-                        if(overlap >= approxInnerMaxOverlap * CUTOFF_OVERLAP_FRACTION &&
-                            overlap >= bestFillableGaps / (rowCount + 1) && overlap >= 2)
+                        localInner.clear();
+                        localInner = std::vector<std::map<unsigned int,std::vector<RowBitMask>>>(nthreads);
+                        bitMasksPerInnerRowSet->clear();
+                        bitMasksPerOuterRowSet->clear();
+                        approxOuterMaxOverlap = 2;
+                        approxInnerMaxOverlap = 2;
+                        unsigned int usedIterations;
+                        std::tie(rowsToUseInner, usedIterations) = determineWhichRowsToUse(
+                            *prevBitMasksPerInnerRowSet, targetIterCount, rowDimCompZone[1], benefitFractionToAlsoExecute);
+                        logger->debug("Investigating {} rows for inner section at count {}", rowsToUseInner.size(), rowCount);
+                        iterCount += usedIterations;
+                        #pragma omp taskloop
+                        for(const auto& prevBitMask : rowsToUseInner)
                         {
-                            if(overlap > maxLocalInner)
+                            for(size_t i = prevBitMask->indices.back() + 1; i < rowDimCompZone[1]; i++)
                             {
-                                maxLocalInner = overlap;
+                                RowBitMask combBitMask = RowBitMask::fromAnd(*prevBitMask, bitMaskByInnerRow[i - rowDimCompZone[0]]);
+                                unsigned int overlap = combBitMask.bitsSet();
+                                if(overlap >= approxInnerMaxOverlap * cutoffOverlapThreshold &&
+                                    overlap >= bestFillableGaps / (rowCount + 1) && overlap >= 2)
+                                {
+                                    if(overlap > maxLocalInner)
+                                    {
+                                        maxLocalInner = overlap;
+                                    }
+                                    if(maxLocalInner > approxInnerMaxOverlap)
+                                    {
+                                        approxInnerMaxOverlap = maxLocalInner;
+                                    }
+                                    localInner[omp_get_thread_num()][overlap].push_back(std::move(combBitMask));
+                                }
                             }
-                            if(maxLocalInner > approxInnerMaxOverlap)
-                            {
-                                approxInnerMaxOverlap = maxLocalInner;
-                            }
-                            localInner[overlap].push_back(std::move(combBitMask));
                         }
                     }
+                    #pragma omp task
+                    {
+                        localOuter.clear();
+                        localOuter = std::vector<std::map<unsigned int,std::vector<RowBitMask>>>(nthreads);
+                        if(!prevBitMasksPerInnerRowSet->empty())
+                        {
+                            logger->debug("Max empty columns for {} rows: {}", rowCount - 1, prevBitMasksPerInnerRowSet->rbegin()->first);
+                        }
+
+                        unsigned int usedIterations;
+                        std::tie(rowsToUseOuter, usedIterations) = determineWhichRowsToUse(
+                            *prevBitMasksPerOuterRowSet, targetIterCount, rows, benefitFractionToAlsoExecute);
+                        logger->debug("Investigating {} rows for outer section at count {}", rowsToUseOuter.size(), rowCount);
+                        iterCount += usedIterations;
+                        #pragma omp taskloop
+                        for(const auto& prevBitMask : rowsToUseOuter)
+                        {
+                            for(size_t i = prevBitMask->indices.back() + 1; i < rows; i++)
+                            {
+                                RowBitMask combBitMask = RowBitMask::fromAnd(*prevBitMask, bitMaskByOuterRow[i]);
+                                unsigned int overlap = combBitMask.bitsSet();
+                                if(overlap >= approxOuterMaxOverlap * cutoffOverlapThreshold &&
+                                    overlap >= bestFillableGaps / (rowCount + 1) && overlap >= 2)
+                                {
+                                    if(overlap > maxLocalOuter)
+                                    {
+                                        maxLocalOuter = overlap;
+                                    }
+                                    if(maxLocalOuter > approxOuterMaxOverlap)
+                                    {
+                                        approxOuterMaxOverlap = maxLocalOuter;
+                                    }
+                                    localOuter[omp_get_thread_num()][overlap].push_back(std::move(combBitMask));
+                                }
+                            }
+                        }
+                    }
+                    #pragma omp taskwait
                 }
-                #pragma omp critical
+                
+                #pragma omp critical(innerAppend)
                 {
-                    for(auto rIter = localInner.rbegin(); rIter != localInner.rend(); rIter++)
+                    int tid = omp_get_thread_num();
+                    for(auto rIter = localInner[tid].rbegin(); rIter != localInner[tid].rend(); rIter++)
                     {
                         unsigned int overlap = std::get<0>(*rIter);
-                        if(overlap < approxInnerMaxOverlap * CUTOFF_OVERLAP_FRACTION)
+                        if(overlap < approxInnerMaxOverlap * cutoffOverlapThreshold)
                         {
                             break;
                         }
@@ -1803,34 +1848,13 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
                         }
                     }
                 }
-                #pragma omp for nowait schedule(dynamic, 1)
-                for(const auto& prevBitMask : rowsToUseOuter)
+                #pragma omp critical(outerAppend)
                 {
-                    for(size_t i = prevBitMask.indices.back() + 1; i < rows; i++)
-                    {
-                        RowBitMask combBitMask = RowBitMask::fromAnd(prevBitMask, bitMaskByOuterRow[i]);
-                        unsigned int overlap = combBitMask.bitsSet();
-                        if(overlap >= approxOuterMaxOverlap * CUTOFF_OVERLAP_FRACTION &&
-                            overlap >= bestFillableGaps / (rowCount + 1) && overlap >= 2)
-                        {
-                            if(overlap > maxLocalOuter)
-                            {
-                                maxLocalOuter = overlap;
-                            }
-                            if(maxLocalOuter > approxOuterMaxOverlap)
-                            {
-                                approxOuterMaxOverlap = maxLocalOuter;
-                            }
-                            localOuter[overlap].push_back(std::move(combBitMask));
-                        }
-                    }
-                }
-                #pragma omp critical
-                {
-                    for(auto rIter = localOuter.rbegin(); rIter != localOuter.rend(); rIter++)
+                    int tid = omp_get_thread_num();
+                    for(auto rIter = localOuter[tid].rbegin(); rIter != localOuter[tid].rend(); rIter++)
                     {
                         unsigned int overlap = std::get<0>(*rIter);
-                        if(overlap < approxOuterMaxOverlap * CUTOFF_OVERLAP_FRACTION)
+                        if(overlap < approxOuterMaxOverlap * cutoffOverlapThreshold)
                         {
                             break;
                         }
@@ -1846,144 +1870,148 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
                     // Select index sets that are to be used in move creation
                     #pragma omp single nowait
                     {
-                        outerRowsToInvestigate.clear();
+                        size_t outerRowCount = 0;
                         unsigned int maxOuterOverlap = bitMasksPerOuterRowSet->rbegin()->first;
                         for(auto reverseIteratorOuter = bitMasksPerOuterRowSet->rbegin(); 
                             reverseIteratorOuter != bitMasksPerOuterRowSet->rend(); 
                             reverseIteratorOuter++)
                         {
                             const auto& [overlap, rows] = *reverseIteratorOuter;
-                            if(overlap < maxOuterOverlap * CUTOFF_OVERLAP_FRACTION ||
+                            if(overlap < maxOuterOverlap * cutoffOverlapThreshold ||
                                 (bestMove.has_value() && approxBaselineCost / (overlap * rowCount) > bestCostPerFilledGap) || 
-                                outerRowsToInvestigate.size() >= MAX_INVESTIGATED_OVERLAP_SELECTIONS)
+                                outerRowCount >= maxInvestigatedOverlapSections)
                             {
                                 break;
                             }
                             for(const auto& row : rows)
                             {
-                                outerRowsToInvestigate.push_back(&row);
+                                if(outerRowCount >= maxInvestigatedOverlapSections)
+                                {
+                                    break;
+                                }
+                                outerRowsToInvestigate[outerRowCount++] = &row;
                             }
                         }
-                    }
-                    #pragma omp single
-                    {
-                        innerRowsToInvestigate.clear();
+
+                        size_t innerRowCount = 0;
                         unsigned int maxInnerOverlap = bitMasksPerInnerRowSet->rbegin()->first;
                         for(auto reverseIteratorInner = bitMasksPerInnerRowSet->rbegin(); 
                             reverseIteratorInner != bitMasksPerInnerRowSet->rend(); 
                             reverseIteratorInner++)
                         {
                             const auto& [overlap, rows] = *reverseIteratorInner;
-                            if(overlap < maxInnerOverlap * CUTOFF_OVERLAP_FRACTION ||
+                            if(overlap < maxInnerOverlap * cutoffOverlapThreshold ||
                                 (bestMove.has_value() && approxBaselineCost / (overlap * rowCount) > bestCostPerFilledGap) || 
-                                innerRowsToInvestigate.size() >= MAX_INVESTIGATED_OVERLAP_SELECTIONS)
+                                innerRowCount >= maxInvestigatedOverlapSections)
                             {
                                 break;
                             }
                             for(const auto& row : rows)
                             {
-                                innerRowsToInvestigate.push_back(&row);
+                                if(innerRowCount >= maxInvestigatedOverlapSections)
+                                {
+                                    break;
+                                }
+                                innerRowsToInvestigate[innerRowCount++] = &row;
                             }
                         }
-                    }
-                    // Approximate for each combination of start and end indices how good the resulting move would be
-                    #pragma omp for collapse(2) nowait schedule(dynamic, 1)
-                    for(auto rowOuter : outerRowsToInvestigate)
-                    {
-                        for(auto rowInner : innerRowsToInvestigate)
+                        // Approximate for each combination of start and end indices how good the resulting move would be
+                        for(size_t outerRowIndex = 0; outerRowIndex < outerRowCount; outerRowIndex++)
                         {
-                            // Calculate approximate move cost                    
-                            double cost = Config::getInstance().moveCostOffset + 2 * (Config::getInstance().moveCostOffsetSubmove + 
-                                Config::getInstance().moveCostScalingSqrt * M_4TH_ROOT_1_2 + 
-                                Config::getInstance().moveCostScalingLinear * M_SQRT1_2);
+                            for(size_t innerRowIndex = 0; innerRowIndex < innerRowCount; innerRowIndex++)
+                            {
+                                const auto* rowOuter = outerRowsToInvestigate[outerRowIndex];
+                                const auto* rowInner = innerRowsToInvestigate[innerRowIndex];
+                                // Calculate approximate move cost                    
+                                double cost = Config::getInstance().moveCostOffset + 2 * (Config::getInstance().moveCostOffsetSubmove + 
+                                    Config::getInstance().moveCostScalingSqrt * M_4TH_ROOT_1_2 + 
+                                    Config::getInstance().moveCostScalingLinear * M_SQRT1_2);
 
-                            int maxDist = 0;
-                            for(size_t i = 0; i < rowOuter->indices.size(); i++)
-                            {
-                                int dist = abs((int)rowOuter->indices[i] - (int)rowInner->indices[i]);
-                                if(dist > maxDist)
+                                int maxDist = 0;
+                                for(size_t i = 0; i < rowOuter->indices.size(); i++)
                                 {
-                                    maxDist = dist;
+                                    int dist = abs((int)rowOuter->indices[i] - (int)rowInner->indices[i]);
+                                    if(dist > maxDist)
+                                    {
+                                        maxDist = dist;
+                                    }
                                 }
-                            }
-                            cost += costPerSubMove(maxDist);
-                            
-                            std::vector<int> sourceIndices;
-                            for(size_t i = 0; i < rowOuter->count; i++)
-                            {
-                                if((*rowOuter)[i])
+                                cost += costPerSubMove(maxDist);
+                                
+                                std::vector<int> sourceIndices;
+                                for(size_t i = 0; i < rowOuter->count; i++)
                                 {
-                                    sourceIndices.push_back((int)i);
+                                    if((*rowOuter)[i])
+                                    {
+                                        sourceIndices.push_back((int)i);
+                                    }
                                 }
-                            }
-                            std::vector<int> targetIndices;
-                            for(size_t i = 0; i < rowInner->count; i++)
-                            {
-                                if((*rowInner)[i])
+                                std::vector<int> targetIndices;
+                                for(size_t i = 0; i < rowInner->count; i++)
                                 {
-                                    targetIndices.push_back((int)i + colDimCompZone[0]);
+                                    if((*rowInner)[i])
+                                    {
+                                        targetIndices.push_back((int)i + colDimCompZone[0]);
+                                    }
                                 }
-                            }
 
-                            int approxInnerDist = 0;
-                            size_t outerOffset = 0, innerOffset = 0;
-                            int excessOuterIndices = (int)rowOuter->bitsSet() - (int)rowInner->bitsSet();
-                            if(excessOuterIndices >= 0)
-                            {
-                                outerOffset = excessOuterIndices / 2;
-                            }
-                            else
-                            {
-                                innerOffset = -excessOuterIndices / 2;
-                            }
-                            for(size_t i = 0; i < sourceIndices.size() && i < targetIndices.size(); i++)
-                            {
-                                int dist = abs(sourceIndices[i + outerOffset] - targetIndices[i + innerOffset]);
-                                if(dist > approxInnerDist)
+                                int approxInnerDist = 0;
+                                size_t outerOffset = 0, innerOffset = 0;
+                                int excessOuterIndices = (int)rowOuter->bitsSet() - (int)rowInner->bitsSet();
+                                if(excessOuterIndices >= 0)
                                 {
-                                    approxInnerDist = dist;
+                                    outerOffset = excessOuterIndices / 2;
                                 }
-                            }
-                            cost += costPerSubMove(approxInnerDist);
+                                else
+                                {
+                                    innerOffset = -excessOuterIndices / 2;
+                                }
+                                for(size_t i = 0; i < sourceIndices.size() && i < targetIndices.size(); i++)
+                                {
+                                    int dist = abs(sourceIndices[i + outerOffset] - targetIndices[i + innerOffset]);
+                                    if(dist > approxInnerDist)
+                                    {
+                                        approxInnerDist = dist;
+                                    }
+                                }
+                                cost += costPerSubMove(approxInnerDist);
 
-                            // Calculate number of corrected target sites
-                            unsigned int minCols = rowOuter->bitsSet();
-                            if(rowInner->bitsSet() < minCols)
-                            {
-                                minCols = rowInner->bitsSet();
-                            }
-                            if(colAODLimit < minCols)
-                            {
-                                minCols = colAODLimit;
-                            }
-                            unsigned int correctedTargetSites = rowOuter->indices.size() * minCols;
-                            unsigned int rowsInCompZone = 0;
-                            for(auto index : rowOuter->indices)
-                            {
-                                if(index >= rowDimCompZone[0] && index < rowDimCompZone[1])
+                                // Calculate number of corrected target sites
+                                unsigned int minCols = rowOuter->bitsSet();
+                                if(rowInner->bitsSet() < minCols)
                                 {
-                                    rowsInCompZone++;
+                                    minCols = rowInner->bitsSet();
                                 }
-                            }
-                            unsigned colsInCompZone = 0;
-                            for(size_t i = colDimCompZone[0]; i < colDimCompZone[1]; i++)
-                            {
-                                if((*rowOuter)[i])
+                                if(colAODLimit < minCols)
                                 {
-                                    colsInCompZone++;
+                                    minCols = colAODLimit;
                                 }
-                            }
-                            if(minCols < colsInCompZone)
-                            {
-                                colsInCompZone = minCols;
-                            }
-                            correctedTargetSites += rowsInCompZone * colsInCompZone;
+                                unsigned int correctedTargetSites = rowOuter->indices.size() * minCols;
+                                unsigned int rowsInCompZone = 0;
+                                for(auto index : rowOuter->indices)
+                                {
+                                    if(index >= rowDimCompZone[0] && index < rowDimCompZone[1])
+                                    {
+                                        rowsInCompZone++;
+                                    }
+                                }
+                                unsigned colsInCompZone = 0;
+                                for(size_t i = colDimCompZone[0]; i < colDimCompZone[1]; i++)
+                                {
+                                    if((*rowOuter)[i])
+                                    {
+                                        colsInCompZone++;
+                                    }
+                                }
+                                if(minCols < colsInCompZone)
+                                {
+                                    colsInCompZone = minCols;
+                                }
+                                correctedTargetSites += rowsInCompZone * colsInCompZone;
 
-                            // Overwrite best-move buffer if new move is best
-                            double costPerCorrectedTargetSite = cost / (double)correctedTargetSites;
-                            if(correctedTargetSites > 0 && (bestFillableGaps == 0 || costPerCorrectedTargetSite < bestCostPerFilledGap))
-                            {
-                                #pragma omp critical
+                                // Overwrite best-move buffer if new move is best
+                                double costPerCorrectedTargetSite = cost / (double)correctedTargetSites;
+                                if(correctedTargetSites > 0 && (bestFillableGaps == 0 || costPerCorrectedTargetSite < bestCostPerFilledGap))
                                 {
                                     if(correctedTargetSites > 0 && (bestFillableGaps == 0 || 
                                         costPerCorrectedTargetSite < bestCostPerFilledGap))
@@ -2003,6 +2031,9 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
             }
         }
     }
+
+    delete[] outerRowsToInvestigate;
+    delete[] innerRowsToInvestigate;
 
     // Create move for most beneficial locations
     auto move = constructMoveWithSeveralRowsAndCols(stateArray, bestStart, bestEnd, bestRowFirst, compZone, bestColLimit, logger);
@@ -2025,7 +2056,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
 std::vector<std::tuple<ParallelMove,int,double>> removeUnwantedAtoms(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
     std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
-    ArrayAccessor& targetGeometry)
+    ArrayAccessor& targetGeometry, double benefitFractionToAlsoExecute)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
 
@@ -2213,7 +2244,7 @@ std::vector<std::tuple<ParallelMove,int,double>> removeUnwantedAtoms(ArrayAccess
 std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
     std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
-    ArrayAccessor& targetGeometry)
+    ArrayAccessor& targetGeometry, double benefitFractionToAlsoExecute)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
     std::vector<size_t> moveRanking;
@@ -2252,6 +2283,16 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
                 {
                     targetIndices[i - outerDimCompZone[0]].push_back(j);
                 }
+            }
+        }
+
+        int innerDistSpacings = 1 + innerSize / 20;
+        if(Config::getInstance().runTimeFocus.has_value())
+        {
+            int innerDistSpacingsByRTF = 1 + Config::getInstance().runTimeFocus.value() / 2;
+            if(innerDistSpacingsByRTF < innerDistSpacings)
+            {
+                innerDistSpacings = innerDistSpacingsByRTF;
             }
         }
 
@@ -2294,7 +2335,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
                     }
                 }
             }
-            if(!bestMoves.empty() && baseCost / (double)sourceIndices.size() > moveCostCutoffThreshold)
+            if((!bestMoves.empty() && baseCost / (double)sourceIndices.size() > moveCostCutoffThreshold))
             {
                 continue;
             }
@@ -2314,8 +2355,8 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
             }
             for(size_t iTarget = iTargetStart; iTarget < iTargetEnd; iTarget++)
             {
-                if(!bestMoves.empty() && baseCost / (double)targetIndices[iTarget - outerDimCompZone[0]].size() > 
-                    moveCostCutoffThreshold)
+                if((!bestMoves.empty() && baseCost / (double)targetIndices[iTarget - outerDimCompZone[0]].size() > 
+                    moveCostCutoffThreshold))
                 {
                     continue;
                 }
@@ -2325,7 +2366,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
                 {
                     maxInnerDist = 2;
                 }
-                for(unsigned int innerDist = 1; innerDist < maxInnerDist; innerDist++)
+                for(unsigned int innerDist = innerDistSpacings; innerDist < maxInnerDist; innerDist += innerDistSpacings)
                 {
                     auto pairings = getMostPairings(sourceIndices, targetIndices[iTarget - outerDimCompZone[0]], innerDist);
                     double approxCost = baseCost;
@@ -2399,14 +2440,14 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
                         auto costPerCorrectedTargetSite = move.cost() / correctedTargetSites;
                         if(costPerCorrectedTargetSite <= moveCostCutoffThreshold)
                         {
-                            #pragma omp critical
+                            #pragma omp critical(moveListUpdate)
                             {
                                 if(costPerCorrectedTargetSite <= moveCostCutoffThreshold)
                                 {
                                     moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, 
-                                        move, correctedTargetSites, costPerCorrectedTargetSite);
+                                        move, correctedTargetSites, costPerCorrectedTargetSite, benefitFractionToAlsoExecute);
                                     moveCostCutoffThreshold = std::get<2>(bestMoves[moveRanking[0]]) / 
-                                        BENEFIT_FRACTION_TO_ALSO_EXECUTE;
+                                        benefitFractionToAlsoExecute;
                                 }
                             }
                         }
@@ -2434,7 +2475,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
 std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
     std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>>, 
-    ArrayAccessor& targetGeometry)
+    ArrayAccessor& targetGeometry, double benefitFractionToAlsoExecute)
 {
     unsigned int aodTotalLimit = Config::getInstance().aodTotalLimit;
 
@@ -2456,24 +2497,6 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
         unsigned int outerAODLimit = 0;
         fillDimensionDependantData(stateArray, compZone, rowFirst, outerDimCompZone, innerDimCompZone, outerSize, innerSize, outerAODLimit, innerAODLimit);
 
-        unsigned int *borderAtomsLeft = new (std::nothrow) unsigned int[outerDimCompZone[1] - outerDimCompZone[0]]();
-        if(borderAtomsLeft == 0)
-        {
-            logger->error("Could not allocate memory");
-            return bestMoves;
-        }
-        unsigned int *borderAtomsRight = new (std::nothrow) unsigned int[outerDimCompZone[1] - outerDimCompZone[0]]();
-        if(borderAtomsRight == 0)
-        {
-            logger->error("Could not allocate memory");
-            return bestMoves;
-        }
-        unsigned int *excessInternalAtoms = new (std::nothrow) unsigned int[outerDimCompZone[1] - outerDimCompZone[0]]();
-        if(excessInternalAtoms == 0)
-        {
-            logger->error("Could not allocate memory");
-            return bestMoves;
-        }
         unsigned int *emptyCompZoneLocations = new (std::nothrow) unsigned int[outerDimCompZone[1] - outerDimCompZone[0]]();
         if(emptyCompZoneLocations == 0)
         {
@@ -2482,24 +2505,9 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
         }
         for(size_t i = outerDimCompZone[0]; i < outerDimCompZone[1]; i++)
         {
-            for(size_t j = 0; j < innerSize; j++)
+            for(size_t j = innerDimCompZone[0]; j < innerDimCompZone[1]; j++)
             {
-                if(accessArrayDim(stateArray, i, j, rowFirst))
-                {
-                    if(j < innerDimCompZone[0])
-                    {
-                        borderAtomsLeft[i - outerDimCompZone[0]]++;
-                    }
-                    else if(j >= innerDimCompZone[1])
-                    {
-                        borderAtomsRight[i - outerDimCompZone[0]]++;
-                    }
-                    else if(!accessArrayDim(targetGeometry, i - outerDimCompZone[0], j - innerDimCompZone[0], rowFirst))
-                    {
-                        excessInternalAtoms[i - outerDimCompZone[0]]++;
-                    }
-                }
-                else if(j >= innerDimCompZone[0] && j < innerDimCompZone[1] && 
+                if(!accessArrayDim(stateArray, i, j, rowFirst) &&
                     accessArrayDim(targetGeometry, i - outerDimCompZone[0], j - innerDimCompZone[0], rowFirst))
                 {
                     emptyCompZoneLocations[i - outerDimCompZone[0]]++;
@@ -2510,9 +2518,33 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
         #pragma omp parallel for schedule(dynamic, 1)
         for(size_t iBorder = outerDimCompZone[0]; iBorder < outerDimCompZone[1]; iBorder++)
         {
-            const unsigned int& currentBorderAtomsLeft = borderAtomsLeft[iBorder - outerDimCompZone[0]];
-            const unsigned int& currentBorderAtomsRight = borderAtomsRight[iBorder - outerDimCompZone[0]];
-            const unsigned int& currentExcessInternalAtoms = excessInternalAtoms[iBorder - outerDimCompZone[0]];
+            unsigned int currentBorderAtomsLeft = 0;
+            unsigned int currentBorderAtomsRight = 0;
+            unsigned int currentExcessInternalAtoms = 0;
+            size_t j = 0;
+            for(; j < innerDimCompZone[0]; j++)
+            {
+                if(accessArrayDim(stateArray, iBorder, j, rowFirst))
+                {
+                    currentBorderAtomsLeft++;
+                }
+            }
+            for(; j < innerDimCompZone[1]; j++)
+            {
+                if(accessArrayDim(stateArray, iBorder, j, rowFirst) && 
+                    !accessArrayDim(targetGeometry, iBorder - outerDimCompZone[0], j - innerDimCompZone[0], rowFirst))
+                {
+                    currentExcessInternalAtoms++;
+                }
+            }
+            for(; j < innerSize; j++)
+            {
+                if(accessArrayDim(stateArray, iBorder, j, rowFirst))
+                {
+                    currentBorderAtomsRight++;
+                }
+            }
+            
             for(size_t iTarget = outerDimCompZone[0]; iTarget < outerDimCompZone[1]; iTarget++)
             {
                 unsigned int outerDist = abs((int)iBorder - (int)iTarget);
@@ -2684,8 +2716,8 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
                             {
                                 if(bestMoves.empty() || costPerCorrectedSite <= moveCostCutoffThreshold)
                                 {
-                                    moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, bestMoveInRow.value(), correctedSites, costPerCorrectedSite);
-                                    moveCostCutoffThreshold = std::get<2>(bestMoves[0]) / BENEFIT_FRACTION_TO_ALSO_EXECUTE;
+                                    moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, bestMoveInRow.value(), correctedSites, costPerCorrectedSite, benefitFractionToAlsoExecute);
+                                    moveCostCutoffThreshold = std::get<2>(bestMoves[0]) / benefitFractionToAlsoExecute;
                                 }
                             }
                         }
@@ -2695,9 +2727,6 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
                 }
             }
         }
-        delete[] borderAtomsLeft;
-        delete[] borderAtomsRight;
-        delete[] excessInternalAtoms;
         delete[] emptyCompZoneLocations;
     }
 
@@ -2712,7 +2741,7 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowThroughSubspace(ArrayAcc
 std::vector<std::tuple<ParallelMove,int,double>> fillRowSidesDirectly(ArrayAccessor& stateArray, 
     size_t compZone[4], std::shared_ptr<spdlog::logger> logger,
     std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>> alreadyMoved, 
-    ArrayAccessor& targetGeometry)
+    ArrayAccessor& targetGeometry, double benefitFractionToAlsoExecute)
 {
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
     std::vector<size_t> moveRanking;
@@ -3000,8 +3029,8 @@ std::vector<std::tuple<ParallelMove,int,double>> fillRowSidesDirectly(ArrayAcces
                     {
                         if(bestMoves.empty() || costPerCorrectedSite <= moveCostCutoffThreshold)
                         {
-                            moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, move, actuallyCorrectedSites, costPerCorrectedSite);
-                            moveCostCutoffThreshold = std::get<2>(bestMoves[0]) / BENEFIT_FRACTION_TO_ALSO_EXECUTE;
+                            moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, move, actuallyCorrectedSites, costPerCorrectedSite, benefitFractionToAlsoExecute);
+                            moveCostCutoffThreshold = std::get<2>(bestMoves[0]) / benefitFractionToAlsoExecute;
                         }
                     }
                 }
@@ -3045,12 +3074,41 @@ bool findNextMove(ArrayAccessor& stateArray, size_t compZone[4], std::vector<Par
     std::vector<std::tuple<ParallelMove,int,double>> bestMoves;
     std::vector<size_t> moveRanking;
     auto startTime = std::chrono::steady_clock::now();
+    std::vector<std::vector<std::tuple<ParallelMove,int,double>>(*)(ArrayAccessor&, 
+        size_t[4], std::shared_ptr<spdlog::logger>,
+        std::optional<Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>>, 
+        ArrayAccessor&, double)> functions;
 
-    for(size_t i = 0; const auto& function : {fillRowSidesDirectly, fillRowThroughSubspace,
-        moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex})
+    int benefitFractionToAlsoExecute = 1;
+    if(Config::getInstance().runTimeFocus.has_value())
+    {
+        if(Config::getInstance().runTimeFocus.value() < 5)
+        {
+            functions = {fillRowSidesDirectly, fillRowThroughSubspace,
+                moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
+        }
+        else
+        {
+            functions = {fillRowSidesDirectly, fillRowThroughSubspace, removeUnwantedAtoms, moveSingleIndex};
+        }
+    }
+    else
+    {
+        if(stateArray.rows() * stateArray.cols() < 1000)
+        {
+            functions = {fillRowSidesDirectly, fillRowThroughSubspace,
+                moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
+        }
+        else
+        {
+            functions = {fillRowSidesDirectly, fillRowThroughSubspace, removeUnwantedAtoms, moveSingleIndex};
+        }
+    }
+
+    for(size_t i = 0; const auto& function : functions)
     {
         for(auto [move, correctedTargetSites, costPerCorrectedTargetSite] : 
-            function(stateArray, compZone, logger, alreadyMoved, targetGeometry))
+            function(stateArray, compZone, logger, alreadyMoved, targetGeometry, benefitFractionToAlsoExecute))
         {
             if(correctedTargetSites > 0)
             {
@@ -3065,7 +3123,8 @@ bool findNextMove(ArrayAccessor& stateArray, size_t compZone[4], std::vector<Par
                         costPerCorrectedTargetSite = improvedCostPerCorrectedTargetSite;
                     }
                 }
-                moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, move, correctedTargetSites, costPerCorrectedTargetSite);
+                moveMoveToSortedMoveListIfUseful(bestMoves, moveRanking, move, 
+                    correctedTargetSites, costPerCorrectedTargetSite, benefitFractionToAlsoExecute);
             }
         }
         auto duration = std::chrono::steady_clock::now() - startTime;
@@ -3112,8 +3171,8 @@ bool findNextMove(ArrayAccessor& stateArray, size_t compZone[4], std::vector<Par
             {
                 nextBestCorrectedTargetSites = updatedCorrectedTargetSite.value();
                 logger->info("Investigated next-best move has cost per corrected site {}, threshold: {}", 
-                    nextBestCostPerCorrectedTargetSite, bestCostPerCorrectedTargetSite / BENEFIT_FRACTION_TO_ALSO_EXECUTE);
-                if(nextBestCostPerCorrectedTargetSite <= bestCostPerCorrectedTargetSite / BENEFIT_FRACTION_TO_ALSO_EXECUTE)
+                    nextBestCostPerCorrectedTargetSite, bestCostPerCorrectedTargetSite / benefitFractionToAlsoExecute);
+                if(nextBestCostPerCorrectedTargetSite <= bestCostPerCorrectedTargetSite / benefitFractionToAlsoExecute)
                 {
                     if(!nextBestMove.execute(stateArray, logger, alreadyMoved))
                     {

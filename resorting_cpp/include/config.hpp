@@ -26,8 +26,8 @@ class Config
             greedyLatticeLoggerName("greedyLatticeSortingLogger"), latticeByRowLoggerName("latticeByRowSortingLogger"), logLevel("info"),
             rowSpacing(1), columnSpacing(1), minAodSpacing(0.001), allowMovingEmptyTrapOntoOccupied(true), allowDiagonalMovement(true), 
             allowMovesBetweenRows(true), allowMovesBetweenCols(true), allowMultipleMovesPerAtom(false), alwaysGenerateAllAODTones(false), 
-            verticalSortingChannel(std::nullopt), aodTotalLimit(256), aodRowLimit(16), aodColLimit(16), moveCostOffset(150), 
-            moveCostOffsetSubmove(0), moveCostScalingSqrt(0), moveCostScalingLinear(0.1),
+            verticalSortingChannel(std::nullopt), runTimeFocus(std::nullopt), aodTotalLimit(256), aodRowLimit(16), aodColLimit(16), 
+            moveCostOffset(150), moveCostOffsetSubmove(0), moveCostScalingSqrt(0), moveCostScalingLinear(0.1),
             recommendedDistFromOccSites(1), recommendedDistFromEmptySites(0.1), minDistFromOccSites(1), maxSubmoveDistInPenalizedArea(1.5) {}
 
         std::shared_ptr<spdlog::logger> sequentialLogger, parallelLogger, greedyLatticeLogger, latticeByRowLogger;
@@ -170,6 +170,19 @@ class Config
             {
                 this->aodColLimit = std::stoi(val);
             }
+            else if(key.compare("runTimeFocus") == 0)
+            {
+                int rtfTmp = std::stoi(val);
+                if(rtfTmp < 0)
+                {
+                    rtfTmp = 0;
+                }
+                else if(rtfTmp > 10)
+                {
+                    rtfTmp = 10;
+                }
+                this->runTimeFocus = rtfTmp;
+            }
             else if(key.compare("moveCostOffset") == 0)
             {
                 this->moveCostOffset = stod(val);
@@ -231,7 +244,10 @@ class Config
                     std::string val = line.substr(delim + 1);
                     end_pos = std::remove(val.begin(), val.end(), ' ');
                     val.erase(end_pos, val.end());
-                    this->setProperty(key, val);
+                    if(val.size() > 0)
+                    {
+                        this->setProperty(key, val);
+                    }
                 }
             }
             return true;
@@ -295,6 +311,7 @@ class Config
         bool allowMovingEmptyTrapOntoOccupied, allowDiagonalMovement, allowMovesBetweenRows, allowMovesBetweenCols, 
             allowMultipleMovesPerAtom, alwaysGenerateAllAODTones;
         std::optional<bool> verticalSortingChannel;
+        std::optional<int> runTimeFocus;
         unsigned int aodTotalLimit, aodRowLimit, aodColLimit;
         double moveCostOffset, moveCostOffsetSubmove, moveCostScalingSqrt, moveCostScalingLinear;
         double recommendedDistFromOccSites, recommendedDistFromEmptySites, minDistFromOccSites, maxSubmoveDistInPenalizedArea;
