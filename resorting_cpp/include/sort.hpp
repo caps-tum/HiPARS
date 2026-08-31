@@ -45,6 +45,7 @@ typedef Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic> StrideDyn;
 class ArrayAccessor
 {
 public:
+    virtual ~ArrayAccessor() = default;
     virtual std::unique_ptr<ArrayAccessor> copy() const = 0;
     virtual void operator=(const ArrayAccessor& other) = 0;
     virtual const bool& operator()(size_t row, size_t col) const = 0;

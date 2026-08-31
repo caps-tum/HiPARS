@@ -771,7 +771,7 @@ bool ParallelMove::extendToUseAllTones(unsigned int stateArrayRows, unsigned int
     {
         int requiredRowTones = Config::getInstance().aodRowLimit;
         int requiredColTones = Config::getInstance().aodColLimit;
-        if(Config::getInstance().aodTotalLimit < requiredRowTones * requiredColTones)
+        if(Config::getInstance().aodTotalLimit < (unsigned int)(requiredRowTones * requiredColTones))
         {
             logger->warn("AOD tone count cannot be maximized as total trap limit is smaller than row and column limit would allow");
             return false;
@@ -781,7 +781,7 @@ bool ParallelMove::extendToUseAllTones(unsigned int stateArrayRows, unsigned int
             logger->warn("Empty move cannot meaningfully be extended to use all tones");
             return false;
         }
-        else if(this->steps[0].rowSelection.size() > requiredRowTones || this->steps[0].colSelection.size() > requiredColTones)
+        else if(this->steps[0].rowSelection.size() > (size_t)requiredRowTones || this->steps[0].colSelection.size() > (size_t)requiredColTones)
         {
             logger->warn("Move already uses more tones than allowed so cannot be extended to use even more");
             return false;
@@ -1643,7 +1643,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSeveralRowsAndCols(ArrayAcc
 
     int maxMultiIterCount = stateArray.rows() * stateArray.cols();
     size_t maxInvestigatedOverlapSections = 10;
-    double cutoffOverlapThreshold = 0.7;
+    double cutoffOverlapThreshold = 0.6;
     if(Config::getInstance().runTimeFocus.has_value())
     {
         int runTimeFocus = Config::getInstance().runTimeFocus.value();
@@ -2335,7 +2335,7 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
                     }
                 }
             }
-            if((!bestMoves.empty() && baseCost / (double)sourceIndices.size() > moveCostCutoffThreshold))
+            if(sourceIndices.empty() || (!bestMoves.empty() && baseCost / (double)sourceIndices.size() > moveCostCutoffThreshold))
             {
                 continue;
             }
@@ -2355,13 +2355,14 @@ std::vector<std::tuple<ParallelMove,int,double>> moveSingleIndex(ArrayAccessor& 
             }
             for(size_t iTarget = iTargetStart; iTarget < iTargetEnd; iTarget++)
             {
-                if((!bestMoves.empty() && baseCost / (double)targetIndices[iTarget - outerDimCompZone[0]].size() > 
+                if(targetIndices[iTarget - outerDimCompZone[0]].empty() || 
+                    (!bestMoves.empty() && baseCost / (double)targetIndices[iTarget - outerDimCompZone[0]].size() > 
                     moveCostCutoffThreshold))
                 {
                     continue;
                 }
                 unsigned int outerDist = abs((int)iStart - (int)iTarget);
-                unsigned int maxInnerDist = innerSize / 4;
+                unsigned int maxInnerDist = innerSize;
                 if(disallowLengthwiseMovement)
                 {
                     maxInnerDist = 2;
@@ -3082,26 +3083,33 @@ bool findNextMove(ArrayAccessor& stateArray, size_t compZone[4], std::vector<Par
     int benefitFractionToAlsoExecute = 1;
     if(Config::getInstance().runTimeFocus.has_value())
     {
-        if(Config::getInstance().runTimeFocus.value() < 5)
+        if(Config::getInstance().runTimeFocus.value() < 1)
         {
             functions = {fillRowSidesDirectly, fillRowThroughSubspace,
                 moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
         }
+        else if(Config::getInstance().runTimeFocus.value() < 5)
+        {
+            functions = {fillRowThroughSubspace, moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
+        }
         else
         {
-            functions = {fillRowSidesDirectly, fillRowThroughSubspace, removeUnwantedAtoms, moveSingleIndex};
+            functions = {removeUnwantedAtoms, moveSingleIndex};
         }
     }
     else
     {
-        if(stateArray.rows() * stateArray.cols() < 1000)
+        if(stateArray.rows() * stateArray.cols() < 300)
         {
-            functions = {fillRowSidesDirectly, fillRowThroughSubspace,
-                moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
+            functions = {fillRowSidesDirectly, moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
+        }
+        else if(stateArray.rows() * stateArray.cols() < 1000)
+        {
+            functions = {moveSeveralRowsAndCols, removeUnwantedAtoms, moveSingleIndex};
         }
         else
         {
-            functions = {fillRowSidesDirectly, fillRowThroughSubspace, removeUnwantedAtoms, moveSingleIndex};
+            functions = {removeUnwantedAtoms, moveSingleIndex};
         }
     }
 
@@ -3311,17 +3319,14 @@ std::optional<std::vector<ParallelMove>> sortParallelInternal(
 }
 
 std::optional<std::vector<ParallelMove>> sortParallelCpp(
-    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> stateArray, 
-    size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
-    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> targetGeometry)
+    ArrayAccessor& stateArray, size_t compZoneRowStart, size_t compZoneRowEnd, size_t compZoneColStart, size_t compZoneColEnd, 
+    ArrayAccessor& targetGeometry)
 {
     std::shared_ptr<spdlog::logger> logger = Config::getInstance().getParallelLogger();
     omp_set_num_threads(NUM_THREADS);
 
-    EigenArrayAccessor stateArrayAccessor(stateArray);
-    EigenArrayAccessor targetGeometryArrayAccessor(targetGeometry);
-    return sortParallelInternal(stateArrayAccessor, compZoneRowStart, 
-        compZoneRowEnd, compZoneColStart, compZoneColEnd, targetGeometryArrayAccessor, logger);
+    return sortParallelInternal(stateArray, compZoneRowStart, 
+        compZoneRowEnd, compZoneColStart, compZoneColEnd, targetGeometry, logger);
 }
 
 #ifndef COMPILED_AS_EXECUTABLE
