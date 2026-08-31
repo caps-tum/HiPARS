@@ -90,7 +90,7 @@ void test_sortParallel_random()
                 break;
         }
 
-        std::ofstream outputFile(filename, std::ios_base::openmode::_S_out);
+        std::ofstream outputFile(filename, std::ios_base::out);
         outputFile << "Qubit\tCTime\tSRate\tAMC\tMCStd\tAMD\tMDStd\tAMT13\tMTStd13\tAMT55\tMTStd55" << std::endl;
 
         for(size_t subSize : subSizes)
@@ -135,6 +135,7 @@ void test_sortParallel_random()
             EigenArrayAccessor targetGeometryAccessor(targetGeometry);
             size_t firstBorder = (totalSize - subSize) / 2;
 
+            sleep(10);
             auto startTime = std::chrono::steady_clock::now();
             for(int iter = 0; iter < iterations; ++iter)
             {
